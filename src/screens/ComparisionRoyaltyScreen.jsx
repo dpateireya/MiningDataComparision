@@ -6,7 +6,7 @@ import {
 import * as XLSX from 'xlsx';
 
 
-export default forwardRef(function ComparisionRoyaltyScreen(
+const ComparisionRoyaltyScreen = forwardRef(function ComparisionRoyaltyScreen(
   { selectedMonth },
   ref
 ) {
@@ -18,10 +18,13 @@ export default forwardRef(function ComparisionRoyaltyScreen(
   const [fileBName, setFileBName] = useState('');
 
   // फिल्टर्स और परिणाम स्टेट्स
-  //const [selectedMonth, setSelectedMonth] = useState('All');
+  // const [selectedMonth, setSelectedMonth] = useState('All');
   const [comparisonReport, setComparisonReport] = useState([]);
   const [totalRowCountA, setTotalRowCountA] = useState(0);
   const [totalRowCountB, setTotalRowCountB] = useState(0);
+
+  // File B के टारगेट माह और उससे एक माह पहले वाले माह की तुलना
+  const [monthOverMonthB, setMonthOverMonthB] = useState(null);
 
   // वित्तीय वर्ष के क्रमानुसार महीनों की मास्टर लिस्ट
   const financialMonths = [
@@ -62,7 +65,7 @@ export default forwardRef(function ComparisionRoyaltyScreen(
       });
 
       setRows(cleanedJson);
-      setTotalCount(cleanedJson.length - 1); // आख़िरी row (Total/Grand Total) को गणना से बाहर रखें
+      setTotalCount(cleanedJson.length - 1); // आख़िरी row (Total/Grand Total) को गणना से बाहर रखें  
     };
     reader.readAsBinaryString(file[0]);
   };
@@ -166,15 +169,39 @@ export default forwardRef(function ComparisionRoyaltyScreen(
         }
       });
 
+      // File A की तुलना में प्रतिशत बदलाव
+      // (sumA शून्य होने पर division-by-zero से बचाया गया है)
+      const sumDiff = sumB - sumA;
+      const sumPercent = sumA !== 0
+        ? (sumDiff / sumA) * 100
+        : (sumB !== 0 ? 100 : 0);
+
       return {
         monthName: mItem.name,
         sumA,
         sumB,
-        sumDiff: sumB - sumA
+        sumDiff,
+        sumPercent
       };
     });
 
     setComparisonReport(report);
+
+    // ===================================================================
+    // File B: टारगेट माह का योग, टारगेट से एक माह पहले का योग, और अंतर
+    // (report array में महीने April → टारगेट माह के क्रम में हैं,
+    //  इसलिए आख़िरी entry टारगेट माह है और उससे पहली entry पिछला माह)
+    // ===================================================================
+    const targetRow = report[report.length - 1];
+    const prevRow = report.length >= 2 ? report[report.length - 2] : null;
+
+    setMonthOverMonthB({
+      targetMonthName: targetRow.monthName,
+      targetSumB: targetRow.sumB,
+      prevMonthName: prevRow ? prevRow.monthName : null,
+      prevSumB: prevRow ? prevRow.sumB : null,
+      diff: prevRow ? targetRow.sumB - prevRow.sumB : null
+    });
   };
   useImperativeHandle(ref, () => ({
     compare: handleCompare
@@ -183,6 +210,9 @@ export default forwardRef(function ComparisionRoyaltyScreen(
   const grandTotalA = comparisonReport.reduce((acc, row) => acc + row.sumA, 0);
   const grandTotalB = comparisonReport.reduce((acc, row) => acc + row.sumB, 0);
   const grandTotalDiff = grandTotalB - grandTotalA;
+  const grandTotalPercent = grandTotalA !== 0
+    ? (grandTotalDiff / grandTotalA) * 100
+    : (grandTotalB !== 0 ? 100 : 0);
 
   return (
     <div className="w-full md:w-1/2 mx-auto space-y-6">
@@ -224,8 +254,6 @@ export default forwardRef(function ComparisionRoyaltyScreen(
         </div>
       )}
 
-
-
       {/* =========================================================================
             मुख्य तुलनात्मक रिपोर्ट तालिका (100% कम्प्लीट और फिक्स कोड)
            ========================================================================= */}
@@ -236,10 +264,11 @@ export default forwardRef(function ComparisionRoyaltyScreen(
             <table className="min-w-full divide-y divide-slate-200 text-xs text-right font-semibold">
               <thead className="bg-slate-100 text-slate-700 font-bold text-center">
                 <tr>
-                  <th className="px-4 py-3 border-r border-slate-200 text-left text-slate-900 w-1/5">माह (Month)</th>
+                  <th className="px-4 py-3 border-r border-slate-200 text-left text-slate-900">माह</th>
                   <th className="px-3 py-3 border-r border-slate-200 bg-blue-50 text-blue-900">{fileAName || 'File A'}</th>
                   <th className="px-3 py-3 border-r border-slate-200 bg-purple-50 text-purple-900">{fileBName || 'File B'}</th>
-                  <th className="px-3 py-3 bg-green-50 text-slate-900 text-center">अंतर (Difference)</th>
+                  <th className="px-3 py-3 border-r border-slate-200 bg-green-50 text-slate-900 text-center">अंतर (Difference) </th>
+                  <th className="px-3 py-3 bg-yellow-50 text-slate-900 text-center">प्रतिशत (%)</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200 text-slate-700">
@@ -248,8 +277,11 @@ export default forwardRef(function ComparisionRoyaltyScreen(
                     <td className="px-4 py-3 border-r border-slate-200 text-left font-bold text-[#0f4c6c]">{row.monthName}</td>
                     <td className="px-3 py-3 border-r border-slate-100 bg-blue-50 bg-opacity-10">{row.sumA.toLocaleString('en-IN')}</td>
                     <td className="px-3 py-3 border-r border-slate-200 bg-purple-50 bg-opacity-10">{row.sumB.toLocaleString('en-IN')}</td>
-                    <td className={`px-3 py-3 font-extrabold text-center bg-green-50 bg-opacity-20 ${row.sumDiff > 0 ? 'text-green-600' : row.sumDiff < 0 ? 'text-red-500' : 'text-slate-500'}`}>
+                    <td className={`px-3 py-3 border-r border-slate-200 font-extrabold text-center bg-green-50 bg-opacity-20 ${row.sumDiff > 0 ? 'text-green-600' : row.sumDiff < 0 ? 'text-red-500' : 'text-slate-500'}`}>
                       {row.sumDiff > 0 ? `+${row.sumDiff.toLocaleString('en-IN')}` : row.sumDiff.toLocaleString('en-IN')}
+                    </td>
+                    <td className={`px-3 py-3 font-extrabold text-center bg-yellow-50 bg-opacity-20 ${row.sumPercent > 0 ? 'text-green-600' : row.sumPercent < 0 ? 'text-red-500' : 'text-slate-500'}`}>
+                      {row.sumPercent > 0 ? `+${row.sumPercent.toFixed(2)}%` : `${row.sumPercent.toFixed(2)}%`}
                     </td>
                   </tr>
                 ))}
@@ -257,7 +289,7 @@ export default forwardRef(function ComparisionRoyaltyScreen(
                 {/* संचयी ग्रैंड टोटल रो (Grand Total Row) */}
                 <tr className="bg-slate-800 text-white font-extrabold text-sm border-t-2 border-slate-900">
                   <td className="px-4 py-3 border-r border-slate-700 text-left uppercase tracking-wider">
-                    कुल योग
+                    योग
                   </td>
                   <td className="px-3 py-3 border-r border-slate-700">
                     {grandTotalA.toLocaleString('en-IN')}
@@ -265,8 +297,11 @@ export default forwardRef(function ComparisionRoyaltyScreen(
                   <td className="px-3 py-3 border-r border-slate-700">
                     {grandTotalB.toLocaleString('en-IN')}
                   </td>
-                  <td className={`px-3 py-3 text-center ${grandTotalDiff > 0 ? 'text-green-400' : grandTotalDiff < 0 ? 'text-red-400' : 'text-slate-300'}`}>
+                  <td className={`px-3 py-3 border-r border-slate-700 text-center ${grandTotalDiff > 0 ? 'text-green-400' : grandTotalDiff < 0 ? 'text-red-400' : 'text-slate-300'}`}>
                     {grandTotalDiff > 0 ? `+${grandTotalDiff.toLocaleString('en-IN')}` : grandTotalDiff.toLocaleString('en-IN')}
+                  </td>
+                  <td className={`px-3 py-3 text-center ${grandTotalPercent > 0 ? 'text-green-400' : grandTotalPercent < 0 ? 'text-red-400' : 'text-slate-300'}`}>
+                    {grandTotalPercent > 0 ? `+${grandTotalPercent.toFixed(2)}%` : `${grandTotalPercent.toFixed(2)}%`}
                   </td>
                 </tr>
               </tbody>
@@ -275,8 +310,67 @@ export default forwardRef(function ComparisionRoyaltyScreen(
         </div>
       )}
 
+      {/* =========================================================================
+            File B: टारगेट माह बनाम पिछला माह — रॉयल्टी तुलना
+           ========================================================================= */}
+      {monthOverMonthB && (
+        <div className="bg-white p-4 rounded border border-slate-200 shadow-sm space-y-3">
+
+          <h2 className="text-sm font-bold text-slate-800 text-center">
+            {fileBName || 'File B'} — {monthOverMonthB.targetMonthName}
+            {monthOverMonthB.prevMonthName ? ` बनाम ${monthOverMonthB.prevMonthName}` : ''}
+          </h2>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-center">
+
+            <div className="bg-purple-50 border border-purple-200 p-3 rounded">
+              <p className="text-xs text-slate-600 font-bold">{monthOverMonthB.targetMonthName} का योग</p>
+              <p className="text-lg font-extrabold text-purple-900 mt-1">
+                {monthOverMonthB.targetSumB.toLocaleString('en-IN')}
+              </p>
+            </div>
+
+            <div className="bg-slate-100 border border-slate-200 p-3 rounded">
+              <p className="text-xs text-slate-600 font-bold">
+                {monthOverMonthB.prevMonthName ? `${monthOverMonthB.prevMonthName} का योग` : 'पिछला माह उपलब्ध नहीं'}
+              </p>
+              <p className="text-lg font-extrabold text-slate-700 mt-1">
+                {monthOverMonthB.prevSumB !== null ? monthOverMonthB.prevSumB.toLocaleString('en-IN') : '—'}
+              </p>
+            </div>
+
+            <div className="bg-green-50 border border-green-200 p-3 rounded">
+              <p className="text-xs text-slate-600 font-bold">अंतर (Difference)</p>
+              <p className={`text-lg font-extrabold mt-1 ${monthOverMonthB.diff === null
+                ? 'text-slate-400'
+                : monthOverMonthB.diff > 0
+                  ? 'text-green-600'
+                  : monthOverMonthB.diff < 0
+                    ? 'text-red-500'
+                    : 'text-slate-500'
+                }`}>
+                {monthOverMonthB.diff === null
+                  ? '—'
+                  : monthOverMonthB.diff > 0
+                    ? `+${monthOverMonthB.diff.toLocaleString('en-IN')}`
+                    : monthOverMonthB.diff.toLocaleString('en-IN')}
+              </p>
+            </div>
+
+          </div>
+
+          {!monthOverMonthB.prevMonthName && (
+            <p className="text-[11px] text-slate-400 text-center">
+              यह वित्तीय वर्ष का पहला माह है, इसलिए पिछले माह से तुलना संभव नहीं है।
+            </p>
+          )}
+
+        </div>
+      )}
+
     </div>
 
   );
 })
 
+export default ComparisionRoyaltyScreen;

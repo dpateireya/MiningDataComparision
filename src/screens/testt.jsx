@@ -1,265 +1,409 @@
-import { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import * as XLSX from 'xlsx';
 
-export default function RoyaltyComparisonScreen() {
-  const [fileAData, setFileAData] = useState([]);
-  const [fileBData, setFileBData] = useState([]);
-  const [fileAName, setFileAName] = useState('');
-  const [fileBName, setFileBName] = useState('');
+export default function App() {
+  const [data, setData] = useState([]);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState('ALL');
+  const [fileName, setFileName] = useState('');
 
-  // फिल्टर्स और परिणाम स्टेट्स
-  const [selectedMonth, setSelectedMonth] = useState('All');
-  const [comparisonReport, setComparisonReport] = useState([]);
-  const [totalRowCountA, setTotalRowCountA] = useState(0);
-  const [totalRowCountB, setTotalRowCountB] = useState(0);
+  // पॉपअप मॉडल में चुनी गई खदान का डेटा स्टोर करने के लिए स्टेट
+  const [selectedMine, setSelectedMine] = useState(null);
 
-  // वित्तीय वर्ष के क्रमानुसार महीनों की मास्टर लिस्ट
-  const financialMonths = [
-    { name: "April", num: "4" },
-    { name: "May", num: "5" },
-    { name: "June", num: "6" },
-    { name: "July", num: "7" },
-    { name: "Aug", num: "8" },
-    { name: "Sept", num: "9" },
-    { name: "Oct", num: "10" },
-    { name: "Nov", num: "11" },
-    { name: "Dec", num: "12" },
-    { name: "Jan", num: "1" },
-    { name: "Feb", num: "2" },
-    { name: "March", num: "3" }
-  ];
+  const handleFileUpload = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
 
-  // एक्सेल डेटा लोड और कॉलम हेडर को साफ़ (Trim) करने का फ़ंक्शन
-  const processExcel = (e, setRows, setFileName, setTotalCount) => {
-    const file = e.target.files;
-    if (!file || file.length === 0) return;
-    setFileName(file[0].name);
+    setFileName(file.name);
 
     const reader = new FileReader();
-    reader.onload = (evt) => {
-      const bstr = evt.target.result;
-      const wb = XLSX.read(bstr, { type: 'binary' });
-      const ws = wb.Sheets[wb.SheetNames[0]];
-      const json = XLSX.utils.sheet_to_json(ws, { defval: "" });
+    reader.onload = (event) => {
+      const binaryStr = event.target.result;
+      const workbook = XLSX.read(binaryStr, { type: 'binary' });
+      const firstSheetName = workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[firstSheetName];
+      const sheetData = XLSX.utils.sheet_to_json(worksheet, { header: 1, raw: false });
 
-      // कॉलम नामों के आगे-पीछे से अदृश्य स्पेस (Spaces) साफ़ करें
-      const cleanedJson = json.map(row => {
-        const newRow = {};
-        Object.keys(row).forEach(key => {
-          newRow[String(key).trim()] = row[key];
-        });
-        return newRow;
-      });
+      const parsedRows = [];
 
-      setRows(cleanedJson);
-      setTotalCount(cleanedJson.length);
-    };
-    reader.readAsBinaryString(file[0]);
-  };
+      for (let i = 0; i < sheetData.length; i++) {
+        const rowCells = sheetData[i];
+        if (!rowCells || rowCells.length < 5) continue;
 
-  // 'Booking Date' कॉलम में से महीना नंबर निकालने का स्मार्ट फ़ंक्शन
-  const getMonthFromDate = (dateVal) => {
-    if (!dateVal) return null;
+        const cleanCells = rowCells.map(cell => cell ? String(cell).trim() : '');
 
-    // 1. यदि एक्सेल ने तारीख को सीरियल नंबर (जैसे 45383) में बदल दिया है
-    if (!isNaN(Number(dateVal)) && Number(dateVal) > 40000) {
-      const parsedDate = XLSX.SSF.parse_date_code(Number(dateVal));
-      return String(parsedDate.m); // महीना रिटर्न करेगा (1 से 12)
-    }
+        let idCode = '';
+        let idIndex = -1;
 
-    // 2. यदि तारीख स्ट्रिंग फॉर्मेट में है (जैसे DD/MM/YYYY या YYYY-MM-DD)
-    const strDate = String(dateVal).trim();
-    // स्लैश (/) या डैश (-) के आधार पर बांटें
-    const parts = strDate.split(/[-/.]/);
+        for (let j = cleanCells.length - 1; j >= 0; j--) {
+          if (cleanCells[j] && /^\d+$/.test(cleanCells[j])) {
+            idCode = cleanCells[j];
+            idIndex = j;
+            break;
+          }
+        }
 
-    if (parts.length >= 3) {
-      // यदि फॉर्मेट YYYY-MM-DD है (पहला पार्ट 4 अंकों का है)
-      if (parts[0].length === 4) {
-        return String(Number(parts[1]));
+        if (idCode && idIndex > 4) {
+          const sNo = cleanCells[1] || '';
+          const lesseeName = cleanCells[2] || '';
+          const address = cleanCells[3] || '';
+
+          // पूरी जन्म कुंडली के लिए आवश्यक अतिरिक्त फ़ील्ड्स
+          const appDate = cleanCells[4] || 'उपलब्ध नहीं'; // आवेदन की तारीख
+          const leaseOrderDetails = cleanCells[6] || 'उपलब्ध नहीं'; // लीज़ ऑर्डर नंबर और तारीख
+          const situation = cleanCells.find(cell => cell.includes('Tehsil :')) || '';
+          const mineral = cleanCells.find(cell => cell.includes('Marble') || cell.includes('Gitti') || cell.includes('Stone') || cell.includes('Murrum') || cell.includes('Sand')) || '';
+          const remarks = cleanCells[cleanCells.length - 3] || 'कोई रिमार्क नहीं है'; // रिमार्क्स कॉलम
+          const status = cleanCells[cleanCells.length - 2] || 'Unknown';
+
+          if (lesseeName && !lesseeName.toLowerCase().includes('name of the lessee')) {
+            parsedRows.push({
+              id: `${idCode}-${sNo}-${i}`,
+              sNo,
+              lesseeName,
+              address,
+              appDate,
+              leaseOrderDetails,
+              situation,
+              mineral,
+              remarks,
+              status,
+              idCode
+            });
+          }
+        }
       }
-      // यदि फॉर्मेट DD/MM/YYYY या DD-MM-YYYY है
-      return String(Number(parts[1]));
-    }
-
-    return null;
+      setData(parsedRows);
+    };
+    reader.readAsBinaryString(file);
   };
 
-  // मुख्य तुलनात्मक कैलकुलेशन लॉजिक
-  const handleCompare = () => {
-    if (fileAData.length === 0 || fileBData.length === 0) {
-      alert("कृपया तुलना करने के लिए दोनों एक्सेल फ़ाइलें अपलोड करें!");
-      return;
-    }
+  const filteredData = useMemo(() => {
+    return data.filter(item => {
+      const matchesSearch =
+        item.lesseeName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        item.idCode.includes(searchTerm) ||
+        item.situation.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        item.mineral.toLowerCase().includes(searchTerm.toLowerCase());
 
-    // चुने हुए लक्ष्य माह तक का इंडेक्स निर्धारित करें
-    const targetIndex = selectedMonth === 'All'
-      ? financialMonths.length - 1
-      : financialMonths.findIndex(m => m.num === selectedMonth);
-
-    // अप्रैल से लेकर टारगेट माह तक के एक्टिव महीनों के नंबरों की लिस्ट निकालें
-    const activeMonthNums = financialMonths.slice(0, targetIndex + 1).map(m => m.num);
-
-    // प्रत्येक एक्टिव महीने के लिए अलग-अलग रॉयल्टी जोड़ की गणना
-    const report = financialMonths.slice(0, targetIndex + 1).map(mItem => {
-      let sumA = 0;
-      let sumB = 0;
-
-      // फ़ाइल A से रॉयल्टी कैलकुलेशन (केवल चालू महीने के लिए)
-      fileAData.forEach(row => {
-        const rowMonth = getMonthFromDate(row["Booking Date"]);
-        if (rowMonth === mItem.num) {
-          const val = row["Royalty"];
-          const cleanNum = Number(String(val).replace(/,/g, '').replace(/Rs\.?/gi, '').trim());
-          if (!isNaN(cleanNum)) sumA += cleanNum;
-        }
-      });
-
-      // फ़ाइल B से रॉयल्टी कैलकुलेशन (केवल चालू महीने के लिए)
-      fileBData.forEach(row => {
-        const rowMonth = getMonthFromDate(row["Booking Date"]);
-        if (rowMonth === mItem.num) {
-          const val = row["Royalty"];
-          const cleanNum = Number(String(val).replace(/,/g, '').replace(/Rs\.?/gi, '').trim());
-          if (!isNaN(cleanNum)) sumB += cleanNum;
-        }
-      });
-
-      return {
-        monthName: mItem.name,
-        sumA,
-        sumB,
-        sumDiff: sumB - sumA
-      };
+      const matchesStatus = statusFilter === 'ALL' || item.status.trim() === statusFilter;
+      return matchesSearch && matchesStatus;
     });
+  }, [data, searchTerm, statusFilter]);
 
-    setComparisonReport(report);
-  };
-
-  // संचयी ग्रैंड टोटल (Cumulative Grand Total)
-  const grandTotalA = comparisonReport.reduce((acc, row) => acc + row.sumA, 0);
-  const grandTotalB = comparisonReport.reduce((acc, row) => acc + row.sumB, 0);
-  const grandTotalDiff = grandTotalB - grandTotalA;
+  const stats = useMemo(() => {
+    return {
+      total: data.length,
+      working: data.filter(d => d.status.trim() === 'Working').length,
+      lapse: data.filter(d => d.status.trim() === 'Lapse').length,
+      nonWorking: data.filter(d => d.status.trim() === 'Non-Working').length,
+    };
+  }, [data]);
 
   return (
-    <div className="w-full md:w-3/4 mx-auto space-y-6 p-4 font-sans text-slate-800">
+    <div className="min-h-screen bg-slate-50 p-6 text-slate-800 font-sans">
+      <div className="max-w-7xl mx-auto space-y-6">
 
-      {/* मुख्य हेडर */}
-      <div className="bg-white p-4 text-center rounded border border-slate-200 shadow-sm">
-        <h1 className="text-xl font-bold text-slate-900 tracking-wide">📊 प्राप्‍त राजस्‍व की तुलनात्‍मक जानकारी (माहवार विश्लेषण)</h1>
-        <p className="text-xs text-slate-500 mt-1">Booking Date से माह निकालकर रॉयल्टी राशि का संचयी जोड़</p>
-      </div>
-
-      {/* फ़ाइल अपलोड बॉक्स */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="bg-[#d2ecf9] p-4 rounded border border-[#b2ddf3] flex flex-col items-center justify-center border-dashed border-2">
-          <label className="cursor-pointer bg-white border border-[#b2ddf3] px-4 py-2 rounded text-center shadow-sm hover:bg-slate-50 block w-full max-w-xs">
-            <span className="font-bold text-xs text-[#0f4c6c]">📁 File A अपलोड करें</span>
-            <input type="file" accept=".xlsx, .xls" className="hidden" onChange={(e) => processExcel(e, setFileAData, setFileAName, setTotalRowCountA)} />
-          </label>
-          {fileAName && <p className="mt-2 text-xs font-semibold text-slate-600 truncate max-w-xs">{fileAName}</p>}
-        </div>
-
-        <div className="bg-[#ebd6f1] p-4 rounded border border-[#dcbbe6] flex flex-col items-center justify-center border-dashed border-2">
-          <label className="cursor-pointer bg-white border border-[#dcbbe6] px-4 py-2 rounded text-center shadow-sm hover:bg-slate-50 block w-full max-w-xs">
-            <span className="font-bold text-xs text-purple-800">📁 File B अपलोड करें</span>
-            <input type="file" accept=".xlsx, .xls" className="hidden" onChange={(e) => processExcel(e, setFileBData, setFileBName, setTotalRowCountB)} />
-          </label>
-          {fileBName && <p className="mt-2 text-xs font-semibold text-slate-600 truncate max-w-xs">{fileBName}</p>}
-        </div>
-      </div>
-
-      {/* कुल रिकॉर्ड काउंट */}
-      {(totalRowCountA > 0 || totalRowCountB > 0) && (
-        <div className="grid grid-cols-2 gap-4 bg-white p-4 rounded border border-slate-200 shadow-sm text-center">
-          <div className="bg-blue-50 border border-blue-200 p-3 rounded">
-            <p className="text-xs text-slate-600 font-bold">File A कुल रिकॉर्ड count</p>
-            <p className="text-xl font-extrabold text-blue-900 mt-1">{totalRowCountA.toLocaleString('en-IN')}</p>
-          </div>
-          <div className="bg-purple-50 border border-purple-200 p-3 rounded">
-            <p className="text-xs text-slate-600 font-bold">File B कुल रिकॉर्ड count</p>
-            <p className="text-xl font-extrabold text-purple-900 mt-1">{totalRowCountB.toLocaleString('en-IN')}</p>
-          </div>
-        </div>
-      )}
-
-      {/* लक्ष्य अवधि फ़िल्टर बार */}
-      {(fileAData.length > 0 && fileBData.length > 0) && (
-        <div className="bg-white p-4 rounded border border-slate-200 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-4">
+        {/* Header Card */}
+        <header className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>
-            <label className="block text-xs font-bold text-slate-600 mb-1">किस लक्ष्य माह तक की रिपोर्ट देखनी है?</label>
-            <select value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} className="bg-slate-100 border border-slate-300 rounded p-2 text-xs font-bold focus:outline-none w-64 text-slate-700">
-              <option value="All">संपूर्ण वित्तीय वर्ष (April to March)</option>
-              <option value="4">📅 April तक (Only April)</option>
-              <option value="5">📅 May तक (April से May)</option>
-              <option value="6">📅 June तक (April से June)</option>
-              <option value="7">📅 July तक (April से July)</option>
-              <option value="8">📅 August तक (April से August)</option>
-              <option value="9">📅 September तक (April से Sept)</option>
-              <option value="10">📅 October तक (April से Oct)</option>
-              <option value="11">📅 November तक (April से Nov)</option>
-              <option value="12">📅 December तक (April से Dec)</option>
-              <option value="1">📅 January तक (April से Jan)</option>
-              <option value="2">📅 February तक (April से Feb)</option>
-              <option value="3">📅 March तक (April से March)</option>
-            </select>
+            <h1 className="text-2xl font-bold tracking-tight text-slate-900">Quarry Lease Register Reader</h1>
+            <p className="text-sm text-slate-500 mt-1">खदान पर क्लिक करके उसकी पूरी जन्म कुंडली (पॉपअप मॉडल) देखें।</p>
           </div>
 
-          <button onClick={handleCompare} className="bg-green-600 hover:bg-green-700 text-white font-bold text-xs px-8 py-2.5 rounded shadow w-full sm:w-auto transition-all">
-            महीनेवार गणना और तुलना करें ➔
-          </button>
-        </div>
-      )}
-      {/* =========================================================================
-            मुख्य तुलनात्मक रिपोर्ट तालिका (100% कम्प्लीट और फिक्स कोड)
-           ========================================================================= */}
-      {comparisonReport.length > 0 && (
-        <div className="bg-white p-4 rounded border border-slate-200 shadow-sm space-y-3">
-          <h2 className="font-bold text-slate-900 text-sm md:text-base">📊 Royalty कॉलम की पृथक एवं संचयी तुलना रिपोर्ट</h2>
+          <div className="flex items-center gap-3">
+            <label className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-medium text-sm rounded-xl cursor-pointer transition-colors shadow-sm">
+              <svg xmlns="http://w3.org" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
+              एक्सेल फ़ाइल चुनें
+              <input type="file" accept=".xlsx,.xls" onChange={handleFileUpload} className="hidden" />
+            </label>
+            {fileName && <span className="text-xs font-medium bg-slate-100 px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600">{fileName}</span>}
+          </div>
+        </header>
 
-          <div className="overflow-x-auto border border-slate-200 rounded">
-            <table className="min-w-full divide-y divide-slate-200 text-xs text-right font-semibold">
-              <thead className="bg-slate-100 text-slate-700 font-bold text-center">
-                <tr>
-                  <th className="px-4 py-3 border-r border-slate-200 text-left text-slate-900 w-1/4">माह का नाम (Month)</th>
-                  <th className="px-3 py-3 border-r border-slate-200 bg-blue-50 text-blue-900">File A रॉयल्टी जोड़</th>
-                  <th className="px-3 py-3 border-r border-slate-200 bg-purple-50 text-purple-900">File B रॉयल्टी जोड़</th>
-                  <th className="px-3 py-3 bg-green-50 text-slate-900 text-center">अंतर (Difference)</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-200 text-slate-700">
-                {comparisonReport.map((row, index) => (
-                  <tr key={index} className="hover:bg-slate-50 transition-colors">
-                    <td className="px-4 py-3 border-r border-slate-200 text-left font-bold text-[#0f4c6c]">{row.monthName}</td>
-                    <td className="px-3 py-3 border-r border-slate-100 bg-blue-50 bg-opacity-10">{row.sumA.toLocaleString('en-IN')}</td>
-                    <td className="px-3 py-3 border-r border-slate-200 bg-purple-50 bg-opacity-10">{row.sumB.toLocaleString('en-IN')}</td>
-                    <td className={`px-3 py-3 font-extrabold text-center bg-green-50 bg-opacity-20 ${row.sumDiff > 0 ? 'text-green-600' : row.sumDiff < 0 ? 'text-red-500' : 'text-slate-500'}`}>
-                      {row.sumDiff > 0 ? `+${row.sumDiff.toLocaleString('en-IN')}` : row.sumDiff.toLocaleString('en-IN')}
-                    </td>
-                  </tr>
+        {data.length > 0 && (
+          <>
+            {/* KPI Stats */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm"><span className="text-xs font-semibold text-slate-400 uppercase">कुल खदानें</span><p className="text-3xl font-bold text-slate-900 mt-1">{stats.total}</p></div>
+              <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm"><span className="text-xs font-semibold text-green-500 uppercase">चालू (Working)</span><p className="text-3xl font-bold text-green-600 mt-1">{stats.working}</p></div>
+              <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm"><span className="text-xs font-semibold text-red-400 uppercase">निरस्त (Lapse)</span><p className="text-3xl font-bold text-red-500 mt-1">{stats.lapse}</p></div>
+              <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm"><span className="text-xs font-semibold text-amber-500 uppercase">बंद (Non-Working)</span><p className="text-3xl font-bold text-amber-600 mt-1">{stats.nonWorking}</p></div>
+            </div>
+
+            {/* Controls */}
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col md:flex-row gap-4 items-center justify-between">
+              <input
+                type="text"
+                placeholder="नाम, आईडी कोड, तहसील या खनिज खोजें... (जैसे: गुलाब सिंह)"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full md:w-96 px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-blue-500 focus:bg-white transition-all"
+              />
+              <div className="flex gap-2">
+                {['ALL', 'Working', 'Lapse', 'Non-Working'].map((status) => (
+                  <button key={status} onClick={() => setStatusFilter(status)} className={`px-4 py-1.5 rounded-lg text-xs font-medium ${statusFilter === status ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600'}`}>{status}</button>
                 ))}
+              </div>
+            </div>
 
-                {/* संचयी ग्रैंड टोटल रो (Grand Total Row) */}
-                <tr className="bg-slate-800 text-white font-extrabold text-sm border-t-2 border-slate-900">
-                  <td className="px-4 py-3 border-r border-slate-700 text-left uppercase tracking-wider">
-                    संचयी कुल योग (Grand Total)
-                  </td>
-                  <td className="px-3 py-3 border-r border-slate-700">
-                    {grandTotalA.toLocaleString('en-IN')}
-                  </td>
-                  <td className="px-3 py-3 border-r border-slate-700">
-                    {grandTotalB.toLocaleString('en-IN')}
-                  </td>
-                  <td className={`px-3 py-3 text-center ${grandTotalDiff > 0 ? 'text-green-400' : grandTotalDiff < 0 ? 'text-red-400' : 'text-slate-300'}`}>
-                    {grandTotalDiff > 0 ? `+${grandTotalDiff.toLocaleString('en-IN')}` : grandTotalDiff.toLocaleString('en-IN')}
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
+            {/* Data Table विद रो क्लिक इवेंट */}
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+              <div className="overflow-x-auto max-h-[500px] scrollbar-thin scrollbar-thumb-slate-200">
+                <table className="w-full text-left border-collapse">
 
+                  {/* 1. स्टिकी टेबल हेडर (Sticky Header) */}
+                  <thead className="bg-slate-50 sticky top-0 border-b border-slate-200 z-10">
+                    <tr>
+                      <th className="p-4 text-xs font-semibold text-slate-500 uppercase tracking-wider w-16 text-center">क्र.</th>
+                      <th className="p-4 text-xs font-semibold text-slate-500 uppercase tracking-wider w-28">ID Code</th>
+                      <th className="p-4 text-xs font-semibold text-slate-500 uppercase tracking-wider md:w-80">पट्टाधारी का नाम व पता</th>
+                      <th className="p-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">लोकेशन (Situation)</th>
+                      <th className="p-4 text-xs font-semibold text-slate-500 uppercase tracking-wider w-40">खनिज (Mineral)</th>
+                      <th className="p-4 text-xs font-semibold text-slate-500 uppercase tracking-wider w-36 text-center">स्थिति (Status)</th>
+                    </tr>
+                  </thead>
+
+                  {/* 2. टेबल बॉडी (Dynamic Data Rows) */}
+                  <tbody className="divide-y divide-slate-100 text-sm">
+                    {filteredData.length > 0 ? (
+                      filteredData.map((row) => (
+                        <tr
+                          key={row.id}
+                          onClick={() => setSelectedMine(row)} // रो पर क्लिक करने का इवेंट जिससे मॉडल खुलेगा
+                          className="hover:bg-blue-50/50 cursor-pointer transition-colors group"
+                        >
+                          {/* सीरियल नंबर */}
+                          <td className="p-4 text-slate-500 text-center font-medium">
+                            {row.sNo}
+                          </td>
+
+                          {/* यूनिक आईडी कोड */}
+                          <td className="p-4">
+                            <span className="bg-slate-100 text-slate-700 font-mono text-xs px-2.5 py-1 rounded-md border border-slate-200 font-bold tracking-wide group-hover:bg-slate-200 transition-colors">
+                              {row.idCode}
+                            </span>
+                          </td>
+
+                          {/* पट्टाधारी का नाम और उसका पता */}
+                          <td className="p-4">
+                            <div className="font-semibold text-slate-900 group-hover:text-blue-600 transition-colors">
+                              {row.lesseeName}
+                            </div>
+                            {row.address && (
+                              <div className="text-xs font-normal text-slate-400 mt-1 max-w-xs truncate" title={row.address}>
+                                {row.address}
+                              </div>
+                            )}
+                          </td>
+
+                          {/* खदान की भौगोलिक स्थिति (तहसील, ग्राम, खसरा) */}
+                          <td className="p-4 text-slate-600 max-w-sm">
+                            <div className="text-xs md:text-sm leading-relaxed truncate" title={row.situation}>
+                              {row.situation || <span className="text-slate-300 italic">जानकारी उपलब्ध नहीं</span>}
+                            </div>
+                          </td>
+
+                          {/* निकाला जाने वाला खनिज */}
+                          <td className="p-4">
+                            <span className="text-slate-700 font-medium bg-slate-50 px-2 py-1 rounded border border-slate-200 text-xs inline-block">
+                              {row.mineral || "N/A"}
+                            </span>
+                          </td>
+
+                          {/* खदान का वर्तमान स्टेटस */}
+                          <td className="p-4 text-center">
+                            <span className={`inline-flex items-center justify-center px-3 py-1 rounded-full text-xs font-semibold border tracking-wide w-28 ${row.status.trim() === 'Working'
+                              ? 'bg-green-50 text-green-700 border-green-200 shadow-xs' :
+                              row.status.trim() === 'Lapse'
+                                ? 'bg-red-50 text-red-700 border-red-200 shadow-xs' :
+                                'bg-amber-50 text-amber-700 border-amber-200 shadow-xs'
+                              }`}>
+                              <span className={`h-1.5 w-1.5 rounded-full mr-1.5 ${row.status.trim() === 'Working' ? 'bg-green-500' :
+                                row.status.trim() === 'Lapse' ? 'bg-red-500' : 'bg-amber-500'
+                                }`}></span>
+                              {row.status}
+                            </span>
+                          </td>
+                        </tr>
+                      ))
+                    ) : (
+                      /* नो डेटा स्टेट (No Records Found UI) */
+                      <tr>
+                        <td colSpan="6" className="p-16 text-center">
+                          <div className="flex flex-col items-center justify-center space-y-2">
+                            <svg xmlns="http://w3.org" className="h-10 w-10 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                            </svg>
+                            <p className="text-base font-semibold text-slate-700">कोई रिकॉर्ड नहीं मिला</p>
+                            <p className="text-xs text-slate-400 max-w-xs">सर्च कीवर्ड बदलें या फ़िल्टर रीसेट करके दोबारा प्रयास करें।</p>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+
+                </table>
+              </div>
+            </div>
+            {/* ----------------- POPUP MODAL (जन्म कुंडली बॉक्स) ----------------- */}
+            {selectedMine && (
+              <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4 z-50 transition-all duration-300">
+                <div className="bg-white rounded-2xl shadow-xl border border-slate-200 max-w-lg w-full overflow-hidden transform transition-all flex flex-col max-h-[90vh]">
+
+                  {/* 1. मॉडल हेडर (Modal Header) - डार्क थीम */}
+                  <div className="bg-slate-900 text-white p-5 flex justify-between items-start sticky top-0 z-20">
+                    <div>
+                      <span className="text-xs uppercase bg-blue-500/20 text-blue-300 font-bold px-2.5 py-1 rounded-md tracking-wider border border-blue-500/30">
+                        Id Code: {selectedMine.idCode}
+                      </span>
+                      <h3 className="text-lg font-bold mt-2.5 leading-snug tracking-tight">
+                        {selectedMine.lesseeName}
+                      </h3>
+                    </div>
+                    <button
+                      onClick={() => setSelectedMine(null)}
+                      className="text-slate-400 hover:text-white p-1.5 rounded-xl hover:bg-white/10 transition-colors cursor-pointer"
+                      title="बंद करें"
+                    >
+                      <svg xmlns="http://w3.org" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+
+                  {/* 2. मॉडल बॉडी (Modal Body) - स्क्रॉलेबल विवरण */}
+                  <div className="p-6 space-y-5 overflow-y-auto flex-1 scrollbar-thin scrollbar-thumb-slate-200">
+
+                    {/* पट्टाधारी का पूरा पता */}
+                    <div>
+                      <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">पट्टाधारी का पूरा पता</h4>
+                      <p className="text-sm font-medium text-slate-700 mt-1.5 bg-slate-50/50 p-2.5 rounded-xl border border-slate-100">
+                        {selectedMine.address || 'विवरण उपलब्ध नहीं'}
+                      </p>
+                    </div>
+
+                    {/* आवेदन तिथि और वर्तमान स्थिति (Grid Layout) */}
+                    <div className="grid grid-cols-2 gap-4 border-t border-b border-slate-100 py-4">
+                      <div>
+                        <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">आवेदन की तारीख</h4>
+                        <p className="text-sm font-semibold text-slate-800 mt-1 flex items-center gap-1.5">
+                          <svg xmlns="http://w3.org" className="h-4 w-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 002-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                          {selectedMine.appDate}
+                        </p>
+                      </div>
+                      <div>
+                        <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">वर्तमान स्थिति (Status)</h4>
+                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-md text-xs font-bold mt-1 border ${selectedMine.status.trim() === 'Working' ? 'bg-green-100 text-green-800 border-green-200' :
+                          selectedMine.status.trim() === 'Lapse' ? 'bg-red-100 text-red-800 border-red-200' :
+                            'bg-amber-100 text-amber-800 border-amber-200'
+                          }`}>
+                          {selectedMine.status}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* लीज़ ऑर्डर विवरण */}
+                    <div>
+                      <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">लीज़ ऑर्डर विवरण (No. & Date)</h4>
+                      <p className="text-sm font-medium text-slate-800 bg-slate-50 p-3 rounded-xl border border-slate-100 mt-1.5 font-mono text-xs leading-relaxed break-words">
+                        {selectedMine.leaseOrderDetails}
+                      </p>
+                    </div>
+
+                    {/* भौगोलिक स्थिति और खसरा */}
+                    <div>
+                      <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">भौगोलिक स्थिति (Situation)</h4>
+                      <p className="text-sm text-slate-600 mt-1.5 leading-relaxed bg-slate-50/30 p-2.5 rounded-xl border border-slate-100">
+                        {selectedMine.situation}
+                      </p>
+                    </div>
+
+                    {/* खनिज प्रकार */}
+                    <div>
+                      <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">खनिज (Mineral)</h4>
+                      <p className="text-sm font-semibold text-slate-800 mt-1 flex items-center gap-1.5">
+                        <span className="h-2 w-2 rounded-full bg-blue-500"></span>
+                        {selectedMine.mineral}
+                      </p>
+                    </div>
+
+                    {/* रिमार्क / विशेष टिप्पणी - हाइलाइटेड बॉक्स */}
+                    <div className="border-t border-slate-100 pt-4">
+                      <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">रिमार्क / विशेष टिप्पणी</h4>
+                      <div className="text-sm italic text-amber-800 bg-amber-50/60 p-3 rounded-xl border border-amber-200/60 mt-1.5 flex items-start gap-2">
+                        <svg xmlns="http://w3.org" className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                        <p className="leading-relaxed">{selectedMine.remarks || 'कोई रिमार्क दर्ज नहीं है।'}</p>
+                      </div>
+                    </div>
+
+                  </div>
+
+                  {/* 3. मॉडल फुटर (Modal Footer) */}
+                  <div className="p-4 bg-slate-50 border-t border-slate-100 flex justify-end sticky bottom-0 z-20">
+                    <button
+                      onClick={() => setSelectedMine(null)}
+                      className="px-5 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 font-semibold text-sm rounded-xl transition-colors cursor-pointer shadow-xs"
+                    >
+                      बंद करें
+                    </button>
+                  </div>
+
+                </div>
+              </div>
+            )}
+            {/* पॉपअप मॉडल एंड */}
+            {/* रजिस्टर फ़ाइल लोड नहीं होने पर दिखने वाला एम्प्टी स्टेट बॉक्स */}
+            {data.length === 0 && (
+              <div className="bg-white rounded-2xl border border-dashed border-slate-300 p-12 md:p-20 text-center flex flex-col items-center justify-center max-w-2xl mx-auto shadow-sm my-8">
+
+                {/* आकर्षक एनिमेटेड आइकन कंटेनर */}
+                <div className="p-4 bg-blue-50 text-blue-600 rounded-2xl mb-5 animate-pulse shadow-xs">
+                  <svg
+                    xmlns="http://w3.org"
+                    className="h-12 w-12"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={1.5}
+                      d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                    />
+                  </svg>
+                </div>
+
+                {/* मुख्य शीर्षक */}
+                <h3 className="text-xl font-bold text-slate-800 tracking-tight">
+                  रजिस्टर फ़ाइल लोड नहीं है
+                </h3>
+
+                {/* विस्तृत विवरण संदेश */}
+                <p className="text-sm text-slate-500 max-w-md mt-2 mb-8 leading-relaxed">
+                  डेटा विश्लेषण और सर्च शुरू करने के लिए ऊपर दिए गए बटन से अपनी असली एक्सेल
+                  <span className="font-semibold text-slate-700 bg-slate-100 px-1.5 py-0.5 rounded mx-1 text-xs">.xlsx</span>
+                  या
+                  <span className="font-semibold text-slate-700 bg-slate-100 px-1.5 py-0.5 rounded mx-1 text-xs">.xls</span>
+                  फ़ाइल अपलोड करें।
+                </p>
+
+                {/* अतिरिक्त सहायता टेक्स्ट (Optional Layout Separator) */}
+                <div className="text-xs text-slate-400 flex items-center gap-1.5 border-t border-slate-100 pt-4 w-full justify-center">
+                  <svg xmlns="http://w3.org" className="h-4 w-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <span>यह रीडर पूरी तरह सुरक्षित है और आपकी फाइल का डेटा कहीं बाहर नहीं भेजता है।</span>
+                </div>
+
+              </div>
+            )}
+
+          </>
+        )
+        }
+      </div>
     </div>
-
-  ); a
+  )
 }
