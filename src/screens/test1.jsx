@@ -1,197 +1,184 @@
-import React, { useState, useEffect } from 'react';
-import * as XLSX from 'xlsx';
-import { Upload, FileSpreadsheet, Eye, EyeOff, BarChart3, Database } from 'lucide-react';
+import React, { useState } from 'react';
+import { Upload, ArrowRight, CheckCircle, FileSpreadsheet, RefreshCw, Layers } from 'lucide-react';
+import { parseExcelFile, compareData } from './utils/excelComparer';
 
-function Test1() {
-    // स्टेट्स (States) मैनेजमेंट
-    const [data, setData] = useState([]);
-    const [summary, setSummary] = useState({});
-    const [showDetails, setShowDetails] = useState(false);
-    const [statusMessage, setStatusMessage] = useState('');
+export default function App() {
+    const [file1, setFile1] = useState(null);
+    const [file2, setFile2] = useState(null);
     const [columns, setColumns] = useState([]);
+    const [selectedKeys, setSelectedKeys] = useState([]); // मल्टीपल कीज रखने के लिए
+    const [results, setResults] = useState([]);
+    const [isCompared, setIsCompared] = useState(false);
+    const [loading, setLoading] = useState(false);
 
-    // 1. पेज लोड होते ही LocalStorage से पुराना डेटा चेक करना
-    useEffect(() => {
-        const storedData = localStorage.getItem('react_excel_data');
-        if (storedData) {
-            const parsedData = JSON.parse(storedData);
-            setData(parsedData);
-            processLogicAndConsolidation(parsedData);
-            setStatusMessage('पूर्व का डेटा प्रदर्शित किया जा रहा है।');
-        } else {
-            setStatusMessage('कोई पूर्व डेटा नहीं है। कृपया नई एक्सेल फ़ाइल अपलोड करें।');
-        }
-    }, []);
-
-    // 2. एक्सेल फ़ाइल अपलोड हैंडलर
-    const handleFileUpload = (e) => {
+    const handleFile1Change = async (e) => {
         const file = e.target.files[0];
-        if (!file) return;
+        if (file) {
+            setFile1(file);
+            const data = await parseExcelFile(file);
+            if (data.length > 0) {
+                const cols = Object.keys(data[0]);
+                setColumns(cols);
 
-        const reader = new FileReader();
-        reader.onload = (evt) => {
-            const bstr = evt.target.result;
-            const wb = XLSX.read(bstr, { type: 'binary' });
-            const wsname = wb.SheetNames[0];
-            const ws = wb.Sheets[wsname];
-            let jsonData = XLSX.utils.sheet_to_json(ws);
-
-            // --- लॉजिक और कंडीशन (Logic & Condition) ---
-            // उदाहरण कंडीशन: यदि शीट में 'Status' कॉलम है, तो केवल 'Active' लोगों को फ़िल्टर करें
-            jsonData = jsonData.filter(row => {
-                const statusKey = Object.keys(row).find(k => k.toLowerCase() === 'status');
-                if (statusKey) {
-                    return row[statusKey].toString().toLowerCase() === 'active';
-                }
-                return true;
-            });
-
-            // LocalStorage में डेटा सुरक्षित करना (ताकि रिफ्रेश पर डेटा गायब न हो)
-            localStorage.setItem('react_excel_data', JSON.stringify(jsonData));
-
-            setData(jsonData);
-            processLogicAndConsolidation(jsonData);
-            setStatusMessage('नया डेटा सफलतापूर्वक अपलोड और सुरक्षित कर दिया गया है!');
-        };
-        reader.readAsBinaryString(file);
+                // आपके डेटा के अनुसार डिफ़ॉल्ट रूप से इन 3 कॉलम्स को मैचिंग के लिए चुन लेते हैं
+                const defaultKeys = cols.filter(c => ['Main Recc', 'MLID', 'Month'].includes(c));
+                setSelectedKeys(defaultKeys.length > 0 ? defaultKeys : [cols[0]]);
+            }
+        }
     };
 
-    // 3. डेटा कंसोलिडेशन और लॉजिक प्रोसेस करने का फंक्शन
-    const processLogicAndConsolidation = (jsonData) => {
-        if (jsonData.length === 0) return;
-
-        // कॉलम के नाम निकालना
-        const keys = Object.keys(jsonData[0]);
-        setColumns(keys);
-
-        // ऑटो-डिटेक्ट कॉलम (Amount और Department)
-        let amountColumn = keys.find(k => k.toLowerCase().includes('salary') || k.toLowerCase().includes('amount') || k.toLowerCase().includes('राशि')) || keys[0];
-        let deptColumn = keys.find(k => k.toLowerCase().includes('dept') || k.toLowerCase().includes('department') || k.toLowerCase().includes('विभाग')) || keys[0];
-
-        // कंसोलिडेशन लॉजिक (Group By Department)
-        const deptSummary = {};
-        jsonData.forEach(row => {
-            const dept = row[deptColumn] || "अन्य (Others)";
-            const amt = Number(row[amountColumn]) || 0;
-
-            if (!deptSummary[dept]) {
-                deptSummary[dept] = { count: 0, total: 0 };
+    // चेकबॉक्स से की-कॉलम चुनने या हटाने का हैंडलर
+    const handleKeyToggle = (col) => {
+        if (selectedKeys.includes(col)) {
+            if (selectedKeys.length > 1) {
+                setSelectedKeys(selectedKeys.filter(k => k !== col));
             }
-            deptSummary[dept].count += 1;
-            deptSummary[dept].total += amt;
-        });
+        } else {
+            setSelectedKeys([...selectedKeys, col]);
+        }
+    };
 
-        setSummary({
-            deptSummary,
-            totalAmount: jsonData.reduce((sum, row) => sum + (Number(row[amountColumn]) || 0), 0),
-            amountColumn,
-            deptColumn
-        });
+    const handleCompare = async () => {
+        if (!file1 || !file2 || selectedKeys.length === 0) return;
+        setLoading(true);
+        try {
+            const data1 = await parseExcelFile(file1);
+            const data2 = await parseExcelFile(file2);
+            const differences = compareData(data1, data2, selectedKeys);
+            setResults(differences);
+            setIsCompared(true);
+        } catch (error) {
+            alert("फाइल प्रोसेस करने में खराबी आई। कृपया कॉलम हेडर चेक करें।");
+        } finally {
+            setLoading(false);
+        }
     };
 
     return (
-        <div className="min-h-screen bg-gray-50 text-gray-800 p-6 font-sans">
-            <div className="max-w-6xl mx-auto">
+        <div className="min-h-screen bg-slate-50 text-slate-800 p-6 font-sans">
+            <div className="max-w-7xl mx-auto">
 
-                {/* हेडर */}
-                <header className="text-center mb-8">
-                    <h1 className="text-3xl font-bold text-blue-900 flex items-center justify-center gap-2">
-                        <BarChart3 className="w-8 h-8 text-blue-600" /> React एक्सेल डेटा डैशबोर्ड
+                {/* Header */}
+                <header className="mb-8 text-center">
+                    <h1 className="text-3xl font-bold text-teal-600 flex items-center justify-center gap-2">
+                        <FileSpreadsheet className="w-8 h-8" /> Mineral Data Audit & Comparer
                     </h1>
-                    <p className="text-sm text-amber-600 font-semibold mt-2 flex items-center justify-center gap-1">
-                        <Database className="w-4 h-4" /> {statusMessage}
-                    </p>
+                    <p className="text-slate-500 mt-2">माइनिंग और मिनरल रिपोर्ट्स के ओपनिंग, प्रोडक्शन और डिस्पैच डेटा की तुलना करें</p>
                 </header>
 
-                {/* 1. अपलोड सेक्शन */}
-                <div className="bg-white p-6 rounded-xl shadow-md mb-8 text-center border border-gray-200">
-                    <label className="cursor-pointer inline-flex items-center gap-2 bg-blue-600 text-white px-5 py-3 rounded-lg font-semibold hover:bg-blue-700 transition">
-                        <Upload className="w-5 h-5" /> नई एक्सेल फ़ाइल चुनें
-                        <input type="file" accept=".xlsx, .xls" onChange={handleFileUpload} className="hidden" />
-                    </label>
+                {/* Upload Section */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                    <div className="bg-white p-5 rounded-xl shadow-xs border border-slate-200">
+                        <label className="block text-sm font-semibold text-slate-600 mb-2">पुराना डेटा (File 1 / Previous Month)</label>
+                        <div className="border-2 border-dashed border-slate-300 rounded-xl p-6 text-center hover:border-teal-400 transition-colors relative cursor-pointer">
+                            <input type="file" accept=".xlsx, .xls" onChange={handleFile1Change} className="absolute inset-0 opacity-0 cursor-pointer" />
+                            <Upload className="w-8 h-8 text-slate-400 mx-auto mb-2" />
+                            <p className="text-sm font-medium text-slate-600">{file1 ? file1.name : "फ़ाइल अपलोड करें"}</p>
+                        </div>
+                    </div>
+
+                    <div className="bg-white p-5 rounded-xl shadow-xs border border-slate-200">
+                        <label className="block text-sm font-semibold text-slate-600 mb-2">नया डेटा (File 2 / Current Month)</label>
+                        <div className="border-2 border-dashed border-slate-300 rounded-xl p-6 text-center hover:border-teal-400 transition-colors relative cursor-pointer">
+                            <input type="file" accept=".xlsx, .xls" onChange={(e) => setFile2(e.target.files[0])} className="absolute inset-0 opacity-0 cursor-pointer" />
+                            <Upload className="w-8 h-8 text-slate-400 mx-auto mb-2" />
+                            <p className="text-sm font-medium text-slate-600">{file2 ? file2.name : "फ़ाइल अपलोड करें"}</p>
+                        </div>
+                    </div>
                 </div>
 
-                {data.length > 0 && (
-                    <>
-                        {/* 2. वर्तमान स्थिति / KPI Cards */}
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-                            <div className="bg-white p-6 rounded-xl shadow-sm border-l-4 border-blue-500">
-                                <h3 className="text-sm font-medium text-gray-400 uppercase">कुल प्रविष्टियां (Total Count)</h3>
-                                <p className="text-3xl font-bold text-gray-800 mt-2">{data.length}</p>
-                            </div>
-                            <div className="bg-white p-6 rounded-xl shadow-sm border-l-4 border-emerald-500">
-                                <h3 className="text-sm font-medium text-gray-400 uppercase">कुल संचित राशि ({summary.amountColumn})</h3>
-                                <p className="text-3xl font-bold text-gray-800 mt-2">
-                                    ₹{summary.totalAmount?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                                </p>
-                            </div>
+                {/* Dynamic Key Selection */}
+                {columns.length > 0 && (
+                    <div className="bg-white p-5 rounded-xl shadow-xs border border-slate-200 mb-6">
+                        <h3 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2">
+                            <Layers className="w-4 h-4 text-teal-500" /> मिलान के लिए मुख्य कॉलम चुनें (रो की पहचान के लिए कम से कम 2-3 कॉलम चुनें, उदा. MLID + Month):
+                        </h3>
+                        <div className="flex flex-wrap gap-2 mb-4">
+                            {columns.map((col) => (
+                                <button
+                                    key={col}
+                                    onClick={() => handleKeyToggle(col)}
+                                    className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${selectedKeys.includes(col)
+                                        ? 'bg-teal-50 border-teal-500 text-teal-700 shadow-xs'
+                                        : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                                        }`}
+                                >
+                                    {col}
+                                </button>
+                            ))}
                         </div>
 
-                        {/* 3. कंसोलिडेटेड डेटा टेबल */}
-                        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 mb-8 overflow-hidden">
-                            <h3 className="text-lg font-bold text-gray-700 mb-4 flex items-center gap-2">
-                                <FileSpreadsheet className="w-5 h-5 text-emerald-600" /> विभाग अनुसार कंसोलिडेटेड समरी
-                            </h3>
+                        <div className="flex justify-end">
+                            <button
+                                onClick={handleCompare}
+                                disabled={!file1 || !file2 || loading}
+                                className="px-6 py-2 bg-teal-600 text-white rounded-lg font-medium hover:bg-teal-700 transition-colors flex items-center gap-2 disabled:opacity-50"
+                            >
+                                {loading ? <RefreshCw className="w-4 h-4 animate-spin" /> : "डेटा की तुलना करें"}
+                            </button>
+                        </div>
+                    </div>
+                )}
+
+                {/* Comparison Dashboard Display */}
+                {isCompared && (
+                    <div className="bg-white rounded-xl shadow-xs border border-slate-200 overflow-hidden">
+                        <div className="p-4 bg-slate-50 border-b border-slate-200 flex justify-between items-center">
+                            <h2 className="font-bold text-slate-700">ऑडिट रिपोर्ट (विसंगतियां/बदलाव)</h2>
+                            <span className="text-xs font-bold bg-amber-100 text-amber-800 px-3 py-1 rounded-full">
+                                कुल अंतर मिले: {results.length}
+                            </span>
+                        </div>
+
+                        {results.length === 0 ? (
+                            <div className="p-12 text-center">
+                                <CheckCircle className="w-12 h-12 text-emerald-500 mx-auto mb-2" />
+                                <p className="font-semibold text-slate-700">उत्कृष्ट! दोनों रिपोर्ट्स का संख्यात्मक डेटा 100% मैच है।</p>
+                            </div>
+                        ) : (
                             <div className="overflow-x-auto">
-                                <table className="min-w-full divide-y divide-gray-200 text-left">
-                                    <thead className="bg-blue-50">
-                                        <tr>
-                                            <th className="px-6 py-3 font-semibold text-blue-900">विभाग ({summary.deptColumn})</th>
-                                            <th className="px-6 py-3 font-semibold text-blue-900">कुल लोग (Count)</th>
-                                            <th className="px-6 py-3 font-semibold text-blue-900">कुल राशि (Total Amount)</th>
+                                <table className="w-full text-left border-collapse text-sm">
+                                    <thead>
+                                        <tr className="bg-slate-100 text-slate-600 text-xs font-semibold uppercase border-b border-slate-200">
+                                            <th className="p-3">खदान / विवरण (Row Identity)</th>
+                                            <th className="p-3">स्थिति</th>
+                                            <th className="p-3">बदला हुआ फ़ील्ड</th>
+                                            <th className="p-3 text-right">पुरानी वैल्यू (File 1)</th>
+                                            <th className="p-3 text-right">नई वैल्यू (File 2)</th>
                                         </tr>
                                     </thead>
-                                    <tbody className="divide-y divide-gray-200 bg-white">
-                                        {summary.deptSummary && Object.entries(summary.deptSummary).map(([dept, values]) => (
-                                            <tr key={dept} className="hover:bg-gray-50">
-                                                <td className="px-6 py-4 font-medium">{dept}</td>
-                                                <td className="px-6 py-4">{values.count}</td>
-                                                <td className="px-6 py-4 font-semibold text-emerald-600">
-                                                    ₹{values.total.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                    <tbody className="divide-y divide-slate-100">
+                                        {results.map((res, idx) => (
+                                            <tr key={idx} className="hover:bg-slate-50/50">
+                                                <td className="p-3 font-medium text-slate-700 max-w-xs truncate" title={res.identifier}>
+                                                    {res.identifier}
+                                                </td>
+                                                <td className="p-3">
+                                                    <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${res.status === 'MODIFIED' ? 'bg-amber-100 text-amber-800' :
+                                                        res.status === 'ADDED' ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
+                                                        }`}>
+                                                        {res.status === 'MODIFIED' && 'वैल्यू बदली'}
+                                                        {res.status === 'ADDED' && 'नई रो जोड़ी'}
+                                                        {res.status === 'DELETED' && 'रो हटा दी'}
+                                                    </span>
+                                                </td>
+                                                <td className="p-3 text-slate-500 font-mono text-xs font-semibold">{res.column}</td>
+                                                <td className="p-3 text-right text-rose-600 font-mono bg-rose-50/20 line-through">{res.oldValue}</td>
+                                                <td className="p-3 text-right text-emerald-600 font-bold font-mono bg-emerald-50/20">
+                                                    <div className="flex items-center justify-end gap-1">
+                                                        {res.status === 'MODIFIED' && <ArrowRight className="w-3 h-3 text-slate-400" />}
+                                                        {res.newValue}
+                                                    </div>
                                                 </td>
                                             </tr>
                                         ))}
                                     </tbody>
                                 </table>
                             </div>
-                        </div>
-
-                        {/* 4. वन-क्लिक पर ऑल डिटेल (One-Click Toggle) */}
-                        <button
-                            onClick={() => setShowDetails(!showDetails)}
-                            className="w-full flex items-center justify-center gap-2 bg-slate-800 text-white font-semibold py-3 px-6 rounded-xl hover:bg-slate-900 transition shadow-md mb-8"
-                        >
-                            {showDetails ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                            {showDetails ? 'सभी विस्तृत जानकारी छुपाएं' : 'वन-क्लिक: सभी विस्तृत जानकारी देखें'}
-                        </button>
-
-                        {/* विस्तृत डेटा टेबल */}
-                        {showDetails && (
-                            <div className="bg-white p-6 rounded-xl shadow-md border border-gray-200 overflow-hidden transition-all">
-                                <h3 className="text-lg font-bold text-gray-700 mb-4">🔍 सभी डेटा की विस्तृत सूची (Full Details)</h3>
-                                <div className="overflow-x-auto max-h-96">
-                                    <table className="min-w-full divide-y divide-gray-200 text-left">
-                                        <thead className="bg-gray-800 text-white sticky top-0">
-                                            <tr>
-                                                {columns.map(col => <th key={col} className="px-4 py-2 text-sm font-semibold">{col}</th>)}
-                                            </tr>
-                                        </thead>
-                                        <tbody className="divide-y divide-gray-200 bg-white text-sm">
-                                            {data.map((row, index) => (
-                                                <tr key={index} className="hover:bg-gray-50">
-                                                    {columns.map(col => <td key={col} className="px-4 py-2 whitespace-nowrap">{row[col] !== undefined ? row[col].toString() : '-'}</td>)}
-                                                </tr>
-                                            ))}
-                                        </tbody>
-                                    </table>
-                                </div>
-                            </div>
                         )}
-                    </>
+                    </div>
                 )}
             </div>
         </div>
     );
 }
-
-export default Test1;

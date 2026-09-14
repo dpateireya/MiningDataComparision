@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import ComparisionRoyaltyScreen from "./ComparisonRoyaltyScreen";
+import ComparisionRoyaltyScreen from "./ComparisionRoyaltyScreen";
 import ComparisionEtpScreen from "./ComparisionEtpScreen";
 
 export default function MainComparisionScreen() {
