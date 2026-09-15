@@ -104,7 +104,7 @@ export default function Dashboard() {
             </aside>
 
             {/* मुख्य कंटेंट एरिया (Main Dynamic Content Pane) */}
-            <main className="flex-1 p-4 md:p-8 md:ml-64 min-w-0 transition-all duration-300">
+            <main className="flex-1 p-1 md:ml-64 min-w-0 transition-all duration-300">
                 <div className="max-w-6xl mx-auto">
                     {/* कंडीशन के आधार पर वेबपेज का बदलना */}
                     {activeTab === 'home' && <HomeOverviewView />}
