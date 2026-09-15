@@ -1,475 +1,347 @@
-import { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import * as XLSX from 'xlsx';
 
-
 export default function Test1() {
-    const [fileAData, setFileAData] = useState([]);
-    const [fileBData, setFileBData] = useState([]);
-    const [fileAName, setFileAName] = useState('');
-    const [fileBName, setFileBName] = useState('');
-    const [selectedMonth, setSelectedMonth] = useState('4');
-    // फिल्टर्स और परिणाम स्टेट्स
-    const [comparisonReport, setComparisonReport] = useState([]);
-    const [totalRowCountA, setTotalRowCountA] = useState(0);
-    const [totalRowCountB, setTotalRowCountB] = useState(0);
+    const [data, setData] = useState([]);
+    const [searchTerm, setSearchTerm] = useState('');
+    const [statusFilter, setStatusFilter] = useState('ALL');
+    const [fileName, setFileName] = useState('');
 
-    // File B के टारगेट माह और उससे एक माह पहले वाले माह की तुलना
-    const [monthOverMonthB, setMonthOverMonthB] = useState(null);
-
-    // वित्तीय वर्ष के क्रमानुसार महीनों की मास्टर लिस्ट (जैसा एक्सेल शीट में है)
-    // "num" वही value है जो MainComparisionScreen (parent) से selectedMonth
-    // prop में भेजी जाती है (जैसे April="4", March="3"), और "name" वही है
-    // जो इस एक्सेल फ़ाइल के कॉलम हेडर में लिखा है (जैसे "April", "March")
-    const financialMonths = [
-        { name: "April", num: "4" },
-        { name: "May", num: "5" },
-        { name: "June", num: "6" },
-        { name: "July", num: "7" },
-        { name: "August", num: "8" },
-        { name: "September", num: "9" },
-        { name: "October", num: "10" },
-        { name: "November", num: "11" },
-        { name: "December", num: "12" },
-        { name: "January", num: "1" },
-        { name: "Feburary", num: "2" },
-        { name: "March", num: "3" }
-    ];
-
-    // एक्सेल फ़ाइल प्रोसेस करने का फ़ंक्शन
-    const processExcel = (e, setRows, setFileName, setTotalCount) => {
+    const handleFileUpload = (e) => {
         const file = e.target.files[0];
         if (!file) return;
+
         setFileName(file.name);
 
         const reader = new FileReader();
-        reader.onload = (evt) => {
-            const bstr = evt.target.result;
-            const wb = XLSX.read(bstr, { type: 'binary' });
-            const ws = wb.Sheets[wb.SheetNames[0]];
-            const json = XLSX.utils.sheet_to_json(ws, { defval: "" });
+        reader.onload = (event) => {
+            const binaryStr = event.target.result;
+            const workbook = XLSX.read(binaryStr, { type: 'binary' });
+            const firstSheetName = workbook.SheetNames[0];
+            const worksheet = workbook.Sheets[firstSheetName];
+            const sheetData = XLSX.utils.sheet_to_json(worksheet, { header: 1, raw: false });
 
-            setRows(json);
-            setTotalCount(json.length - 1); // आख़िरी row (Total/Grand Total) को हटाकर काउंट करें
+            // आदेश नंबर (orders) के आधार पर डेटा को मर्ज करने के लिए मैप
+            const ordersMap = new Map();
+
+            for (let i = 7; i < sheetData.length; i += 2) {
+                const firstRow = sheetData[i];
+                const secondRow = sheetData[i + 1];
+
+                if (!firstRow || !secondRow) continue;
+
+                const cleanFirstCells = firstRow.map(c => c ? String(c).trim() : '');
+                const cleanSecondCells = secondRow.map(c => c ? String(c).trim() : '');
+
+                const lesseeName = `${cleanFirstCells[2]} ${cleanFirstCells[6]} ${cleanFirstCells[8]}`.trim() || '';
+                const address = cleanFirstCells[5] || '';
+                const situation = cleanFirstCells[17] || '';
+                const mineral = cleanFirstCells[13] || '';
+
+                const orders = cleanSecondCells[2] || '';
+                const periods = cleanSecondCells[6] || '';
+                const idCode = cleanSecondCells[17] || '';
+
+                const periodArray = cleanSecondCells[6]?.split('-')[1] || '';
+                const parts = String(periodArray || '').trim().split('/');
+                const target = parts.length === 3 ? new Date(parts[2], parts[1] - 1, parts[0]) : null;
+                const diffDays = target ? Math.ceil((target.setHours(0, 0, 0, 0) - new Date().setHours(0, 0, 0, 0)) / 86400000) : null;
+
+                const status = diffDays === null ? "Invalid Date" : diffDays > 0 ? "Working" : "Lapse";
+
+                if (orders && idCode) {
+                    const uniqueKey = orders.trim().toLowerCase();
+
+                    // वर्तमान रो के खनिजों को साफ करके एरे (Array) में बदलें
+                    const currentMinerals = mineral ? mineral.split(',').map(m => m.trim()).filter(m => m !== '') : [];
+
+                    if (ordersMap.has(uniqueKey)) {
+                        // 🔄 यदि यह आदेश पहले आ चुका है, तो डेटा को मर्ज करें:
+                        const existingRow = ordersMap.get(uniqueKey);
+
+                        // पुराने खनिजों और नए खनिजों को आपस में मिलाएं और Set का उपयोग करके केवल UNIQUE खनिज रखें
+                        const mergedMineralsSet = new Set([
+                            ...existingRow.mineralArray,
+                            ...currentMinerals
+                        ]);
+
+                        // मैप में पुराने रिकॉर्ड को नए मर्ज किए गए खनिजों के साथ अपडेट करें
+                        existingRow.mineralArray = Array.from(mergedMineralsSet);
+                        existingRow.mineral = existingRow.mineralArray.join(', '); // दोबारा टेक्स्ट में बदलें
+
+                    } else {
+                        // 🆕 यदि यह आदेश पहली बार आया है, तो मैप में नया दर्ज करें
+                        ordersMap.set(uniqueKey, {
+                            lesseeName,
+                            address,
+                            situation,
+                            periods,
+                            mineral: currentMinerals.join(', '), // शुरुआती खनिज सूची
+                            mineralArray: currentMinerals,       // ट्रैकिंग के लिए एरे
+                            status,
+                            idCode,
+                            orders,
+                            isDuplicateRow: false // मर्ज होने के कारण अब कोई भी रो डुप्लीकेट नहीं बचेगी
+                        });
+                    }
+                }
+            }
+
+            // मैप से वापस एरे (List) बनाकर स्टेट में स्टोर करें
+            const finalParsedRows = Array.from(ordersMap.values());
+            finalParsedRows.sort((a, b) => b.status.localeCompare(a.status));
+            setData(finalParsedRows);
         };
+
         reader.readAsBinaryString(file);
     };
 
 
-    // चुनी गई अवधि के आधार पर तुलना करने का मुख्य फ़ंक्शन
-    const handleCompare = () => {
-        if (fileAData.length === 0 || fileBData.length === 0) {
-            alert("कृपया तुलना करने के लिए दोनों एक्सेल फ़ाइलें अपलोड करें!");
-            return;
-        }
 
-        // एक्सेल शीट की आख़िरी row (जैसे Total/Grand Total row) को
-        // गणना से बाहर रखने के लिए slice(0, -1) से हटाया गया है
-        const dataA = fileAData.slice(0, -1);
-        const dataB = fileBData.slice(0, -1);
+    // एडवांस सर्च और फ़िल्टर लॉजिक
+    const filteredData = useMemo(() => {
+        return data.filter(item => {
+            const matchesSearch =
+                item.lesseeName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                item.idCode.includes(searchTerm) ||
+                item.situation.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                item.mineral.toLowerCase().includes(searchTerm.toLowerCase());
 
+            const matchesStatus = statusFilter === 'ALL' || item.status.trim() === statusFilter;
 
-        // चुने हुए महीने का इंडेक्स "num" (value) से निकालें —
-        // Parent से selectedMonth हमेशा num की तरह आता है (जैसे "3", "4"),
-        // महीने के नाम की तरह नहीं
-
-        const targetIndex = financialMonths.findIndex(m => m.num === selectedMonth);
-        console.log("Selected Month (num):", selectedMonth, "Index:", targetIndex);
-
-        // अगर selectedMonth अभी तक सेट नहीं हुआ (undefined) या कोई अमान्य
-        // value आई है, तो findIndex() -1 देता है — ऐसे में activeMonths और
-        // report खाली रह जाते, और नीचे targetRow.month पढ़ते समय
-        // "Cannot read properties of undefined (reading 'month')" एरर आता।
-        // इसलिए यहीं रुक जाएं।
-        if (targetIndex === -1) {
-            alert("कृपया एक वैध माह चुनें।");
-            return;
-        }
-
-        // अप्रैल से लेकर चुने हुए महीने तक के सभी महीनों को फ़िल्टर करें
-        const activeMonths = financialMonths.slice(0, targetIndex + 1);
-        console.log("Active Months for Comparison:", activeMonths.map(m => m.name));
-
-        // केवल फ़िल्टर किए गए महीनों के लिए अलग-अलग जोड़ (Sum) निकालना
-        // (एक्सेल कॉलम हेडर महीने के "नाम" से हैं, इसलिए row[mItem.name] पढ़ें)
-        const report = activeMonths.map(mItem => {
-            let sumProdA = 0;
-            let sumDispA = 0;
-            let sumProdB = 0;
-            let sumDispB = 0;
-
-            // फ़ाइल A के लिए गणना: जहाँ Month कॉलम का मान हमारे मोंथ लिस्ट से मैच करे
-            dataA.forEach(row => {
-                const monthVal = row["Month"];
-                if (monthVal && String(monthVal).trim().toLowerCase() === mItem.name.toLowerCase()) {
-                    const prodVal = row["Production"];
-                    const dispVal = row["Dispatch"];
-                    if (prodVal !== undefined && prodVal !== null && prodVal !== '') {
-                        const cleanNum = Number(String(prodVal).replace(/,/g, '').replace(/Rs\.?/gi, '').trim());
-                        if (!isNaN(cleanNum)) sumProdA += cleanNum;
-                    }
-                    if (dispVal !== undefined && dispVal !== null && dispVal !== '') {
-                        const cleanNum = Number(String(dispVal).replace(/,/g, '').replace(/Rs\.?/gi, '').trim());
-                        if (!isNaN(cleanNum)) sumDispA += cleanNum;
-                    }
-                }
-            });
-
-            // फ़ाइल B के लिए गणना
-            dataB.forEach(row => {
-                const monthVal = row["Month"];
-                if (monthVal && String(monthVal).trim().toLowerCase() === mItem.name.toLowerCase()) {
-                    const prodVal = row["Production"];
-                    const dispVal = row["Dispatch"];
-                    if (prodVal !== undefined && prodVal !== null && prodVal !== '') {
-                        const cleanNum = Number(String(prodVal).replace(/,/g, '').replace(/Rs\.?/gi, '').trim());
-                        if (!isNaN(cleanNum)) sumProdB += cleanNum;
-                    }
-                    if (dispVal !== undefined && dispVal !== null && dispVal !== '') {
-                        const cleanNum = Number(String(dispVal).replace(/,/g, '').replace(/Rs\.?/gi, '').trim());
-                        if (!isNaN(cleanNum)) sumDispB += cleanNum;
-                    }
-                }
-            });
-
-            const sumProdDiff = sumProdB - sumProdA;
-            const sumProdPercent = sumProdA !== 0 ? (sumProdDiff / sumProdA) * 100 : (sumProdB !== 0 ? 100 : 0);
-            const sumDispDiff = sumDispB - sumDispA;
-            const sumDispPercent = sumDispA !== 0 ? (sumDispDiff / sumDispA) * 100 : (sumDispB !== 0 ? 100 : 0);
-
-
-            return {
-                month: mItem.name,
-                sumProdA,
-                sumProdB,
-                sumProdDiff,
-                sumProdPercent,
-                sumDispA,
-                sumDispB,
-                sumDispDiff,
-                sumDispPercent
-            };
+            return matchesSearch && matchesStatus;
         });
+    }, [data, searchTerm, statusFilter]);
 
-        setComparisonReport(report);
+    // 📊 डैशबोर्ड स्टेटिस्टिक्स काउंटर (केवल मुख्य पंक्तियों को गिनेगा, डुप्लीकेट्स को नहीं)
+    const stats = useMemo(() => {
+        // केवल उन्हीं रो को फ़िल्टर करें जो डुप्लीकेट नहीं हैं (`isDuplicateRow: false`)
+        const uniqueMines = data.filter(d => !d.isDuplicateRow);
 
-        // ===================================================================
-        // File B: टारगेट माह का योग, टारगेट से एक माह पहले का योग, और अंतर
-        // (report array में महीने April → टारगेट माह के क्रम में हैं,
-        //  इसलिए आख़िरी entry टारगेट माह है और उससे पहली entry पिछला माह)
-        // ===================================================================
-        const targetRow = report[report.length - 1];
-        const prevRow = report.length >= 2 ? report[report.length - 2] : null;
+        return {
+            total: uniqueMines.length,
+            invaliddate: uniqueMines.filter(d => d.status.trim() === "Invalid Date").length,
+            working: uniqueMines.filter(d => d.status.trim() === "Working").length,
+            lapse: uniqueMines.filter(d => d.status.trim() === "Lapse").length,
+        };
+    }, [data]);
 
-        setMonthOverMonthB({
-            targetMonthName: targetRow.month,
-            targetProdSumB: targetRow.sumProdB,
-            targetDispSumB: targetRow.sumDispB,
-            prevMonthName: prevRow ? prevRow.month : null,
-            prevSumProdB: prevRow ? prevRow.sumProdB : null,
-            prevSumDispB: prevRow ? prevRow.sumDispB : null,
-            Proddiff: prevRow ? targetRow.sumProdB - prevRow.sumProdB : null,
-            Dispdiff: prevRow ? targetRow.sumDispB - prevRow.sumDispB : null
-        });
-    };
+    // 🔢 सीरियल नंबर को डायनामिक रूप से केवल मुख्य पंक्तियों के लिए गिनने का लॉजिक
+    let currentSNo = 0;
 
-    // ग्रैंड टोटल निकालने का लॉजिक (यह चुने हुए महीने के अनुसार डायनामिक बदलेगा)
-    const grandTotalProdA = comparisonReport.reduce((acc, row) => acc + row.sumProdA, 0);
-    const grandTotalProdB = comparisonReport.reduce((acc, row) => acc + row.sumProdB, 0);
-    const grandTotalProdDiff = grandTotalProdB - grandTotalProdA;
-    const grandTotalProdPercent = grandTotalProdA !== 0
-        ? (grandTotalProdDiff / grandTotalProdA) * 100
-        : (grandTotalProdB !== 0 ? 100 : 0);
-    const grandTotalDispA = comparisonReport.reduce((acc, row) => acc + row.sumDispA, 0);
-    const grandTotalDispB = comparisonReport.reduce((acc, row) => acc + row.sumDispB, 0);
-    const grandTotalDispDiff = grandTotalDispB - grandTotalDispA;
-    const grandTotalDispPercent = grandTotalDispA !== 0
-        ? (grandTotalDispDiff / grandTotalDispA) * 100
-        : (grandTotalDispB !== 0 ? 100 : 0);
     return (
         <div className="min-h-screen bg-slate-50 p-6 text-slate-800 font-sans">
-            {/* मुख्य हेडर */}
-            <div className="bg-white p-4 text-center rounded border border-slate-200 shadow-sm">
-                <h1 className="text-xl font-bold text-slate-900 tracking-wide">उत्‍पादन व प्रेषण की तुलनात्‍मक जानकारी</h1>
-            </div>
-            {/* फ़ाइल अपलोड बॉक्स */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="bg-[#d2ecf9] p-4 rounded border border-[#b2ddf3] flex flex-col items-center justify-center border-dashed border-2">
-                    <label className="cursor-pointer bg-white border border-[#b2ddf3] px-4 py-2 rounded text-center shadow-sm hover:bg-slate-50 block w-full max-w-xs">
-                        <span className="font-bold text-xs text-[#0f4c6c]">📁 फ़ाइल A अपलोड करें</span>
-                        <input type="file" accept=".xlsx, .xls" className="hidden" onChange={(e) => processExcel(e, setFileAData, setFileAName, setTotalRowCountA)} />
-                    </label>
-                    {fileAName && <p className="mt-2 text-xs font-semibold text-slate-600 truncate max-w-xs">{fileAName}</p>}
-                </div>
+            <div className="max-w-7xl mx-auto space-y-6">
 
-                <div className="bg-[#ebd6f1] p-4 rounded border border-[#dcbbe6] flex flex-col items-center justify-center border-dashed border-2">
-                    <label className="cursor-pointer bg-white border border-[#dcbbe6] px-4 py-2 rounded text-center shadow-sm hover:bg-slate-50 block w-full max-w-xs">
-                        <span className="font-bold text-xs text-purple-800">📁 फ़ाइल B अपलोड करें</span>
-                        <input type="file" accept=".xlsx, .xls" className="hidden" onChange={(e) => processExcel(e, setFileBData, setFileBName, setTotalRowCountB)} />
-                    </label>
-                    {fileBName && <p className="mt-2 text-xs font-semibold text-slate-600 truncate max-w-xs">{fileBName}</p>}
-                </div>
-            </div>
+                {/* Top Header Card */}
+                <header className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                    <div>
+                        <h1 className="text-2xl font-bold tracking-tight text-slate-900">Stock License Register Reader (.xlsx)</h1>
+                        <p className="text-sm text-slate-500 mt-1">अपनी एक्सेल फ़ाइल (.xlsx / .xls) अपलोड करें।</p>
+                    </div>
 
-            {/* =====================================================
-                Common Filter + Single Compare Button
-            ====================================================== */}
+                    <div className="flex items-center gap-3">
+                        <label className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-medium text-sm rounded-xl cursor-pointer transition-colors shadow-sm">
+                            <svg xmlns="http://w3.org" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
+                            एक्सेल फ़ाइल चुनें
+                            <input type="file" accept=".xlsx,.xls" onChange={handleFileUpload} className="hidden" />
+                        </label>
+                        {fileName && <span className="text-xs font-medium bg-slate-100 px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600">{fileName}</span>}
+                    </div>
+                </header>
 
-            <div className="max-w-6xl mx-auto mt-5">
+                {data.length > 0 && (
+                    <>
+                        {/* Summary KPI Cards */}
+                        <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mx-auto">
+                            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+                                <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">कुल भण्‍डारण (Total)</span>
+                                <p className="text-3xl font-bold text-slate-900 mt-1">{stats.total}</p>
+                            </div>
+                            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+                                <span className="text-xs font-semibold text-green-500 uppercase tracking-wider">कार्यशील (Working)</span>
+                                <p className="text-3xl font-bold text-green-600 mt-1">{stats.working}</p>
+                            </div>
+                            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+                                <span className="text-xs font-semibold text-red-400 uppercase tracking-wider">अवधि समाप्‍त (Lapse)</span>
+                                <p className="text-3xl font-bold text-red-500 mt-1">{stats.lapse}</p>
+                            </div>
+                        </div>
 
-                <div className="bg-white p-4 rounded border border-slate-200 shadow-sm">
+                        {/* Filters & Search Control Bar */}
+                        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col md:flex-row gap-4 items-center justify-between">
+                            <div className="relative w-full md:w-96">
+                                <input
+                                    type="text"
+                                    placeholder="नाम, आईडी कोड, तहसील या खनिज खोजें..."
+                                    value={searchTerm}
+                                    onChange={(e) => setSearchTerm(e.target.value)}
+                                    className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-blue-500 focus:bg-white transition-all"
+                                />
+                            </div>
 
-                    <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
-
-                        {/* Month Selection */}
-                        <div className="w-full sm:w-auto">
-
-                            <label className="block text-xs font-bold text-slate-600 mb-1">
-                                किस माह तक की रिपोर्ट देखनी है?
-                            </label>
-                            <select
-                                value={selectedMonth}
-                                onChange={(e) => setSelectedMonth(e.target.value)}
-                                className="
-                                    bg-slate-100
-                                    border border-slate-300
-                                    rounded
-                                    p-2
-                                    text-xs
-                                    font-bold
-                                    focus:outline-none
-                                    w-full
-                                    sm:w-64
-                                    text-slate-700
-                                "
-                            >
-                                {financialMonths.map((month, index) => (
-                                    <option
-                                        key={index}
-                                        value={month.num}
+                            <div className="flex gap-2 w-full md:w-auto overflow-x-auto pb-1 md:pb-0">
+                                {['ALL', 'Working', 'Lapse', 'Non-Working'].map((status) => (
+                                    <button
+                                        key={status}
+                                        onClick={() => setStatusFilter(status)}
+                                        className={`px-4 py-1.5 rounded-lg text-xs font-medium transition-all whitespace-nowrap ${statusFilter === status
+                                            ? 'bg-slate-900 text-white shadow-sm'
+                                            : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                                            }`}
                                     >
-                                        📅 {month.name} तक
-                                    </option>
+                                        {status === 'ALL' ? 'सभी माइन्स' : status}
+                                    </button>
                                 ))}
-                            </select>
+                            </div>
                         </div>
+                        {/* Data Table */}
+                        {/* डेटा टेबल कार्ड स्टार्ट */}
+                        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                            <div className="overflow-x-auto max-h-[600px] scrollbar-thin scrollbar-thumb-slate-200">
+                                <table className="w-full text-left border-collapse">
 
+                                    {/* 1. टेबल हेडर (Sticky Header) */}
+                                    <thead className="bg-slate-50 sticky top-0 border-b border-slate-200 z-10">
+                                        <tr>
+                                            <th className="p-4 text-xs font-semibold text-slate-500 uppercase tracking-wider w-16 text-center">क्र.</th>
+                                            <th className="p-4 text-xs font-semibold text-slate-500 uppercase tracking-wider w-28">ID Code</th>
+                                            <th className="p-4 text-xs font-semibold text-slate-500 uppercase tracking-wider md:w-80">पट्टाधारी का नाम व पता (Lessee Details)</th>
+                                            <th className="p-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">खदान लोकेशन (Situation)</th>
+                                            <th className="p-4 text-xs font-semibold text-slate-500 uppercase tracking-wider w-48">आदेश विवरण (Orders)</th>
+                                            <th className="p-4 text-xs font-semibold text-slate-500 uppercase tracking-wider w-40">अवधि (Periods)</th>
+                                            <th className="p-4 text-xs font-semibold text-slate-500 uppercase tracking-wider w-40">खनिज (Mineral)</th>
+                                            <th className="p-4 text-xs font-semibold text-slate-500 uppercase tracking-wider w-36 text-center">स्थिति (Status)</th>
+                                        </tr>
+                                    </thead>
 
-                        {/* Single Compare Button */}
-                        <button
-                            onClick={handleCompare}
-                            className="
-                                bg-green-600
-                                hover:bg-green-700
-                                text-white
-                                font-bold
-                                text-xs
-                                px-8
-                                py-2.5
-                                rounded
-                                shadow
-                                w-full
-                                sm:w-auto
-                                transition-all
-                            "
-                        >
-                            📊 तुलना करें ➔
-                        </button>
+                                    {/* 2. टेबल बॉडी (Dynamic Rows) */}
+                                    <tbody className="divide-y divide-slate-100 text-sm">
+                                        {filteredData.length > 0 ? (
+                                            filteredData.map((row, index) => {
+                                                // यदि यह मुख्य रो है, तो ही सीरियल नंबर (क्र.) को बढ़ाएं
+                                                if (!row.isDuplicateRow) {
+                                                    currentSNo++;
+                                                }
 
-                    </div>
+                                                return (
+                                                    <tr
+                                                        key={index}
+                                                        className={`transition-colors ${row.isDuplicateRow
+                                                            ? 'bg-slate-50/50 hover:bg-slate-100/70 border-l-4 border-l-blue-400'
+                                                            : 'hover:bg-slate-50/80 bg-white'
+                                                            }`}
+                                                    >
+                                                        {/* क्र. (सीरियल नंबर - केवल मुख्य रो के लिए दिखेगा) */}
+                                                        <td className="p-4 text-slate-500 font-medium text-center">
+                                                            {!row.isDuplicateRow ? currentSNo : ""}
+                                                        </td>
 
-                </div>
+                                                        {/* यूनिक आईडी कोड */}
+                                                        <td className="p-4">
+                                                            <span className="bg-slate-100 text-slate-700 font-mono text-xs px-2.5 py-1 rounded-md border border-slate-200 font-bold tracking-wide">
+                                                                {row.idCode}
+                                                            </span>
+                                                        </td>
+
+                                                        {/* पट्टाधारी का नाम व पता */}
+                                                        <td className="p-4">
+                                                            <div className={`font-semibold text-slate-900 ${row.isDuplicateRow ? 'text-slate-500 text-xs italic' : ''}`}>
+                                                                {row.lesseeName}
+                                                                {row.isDuplicateRow && (
+                                                                    <span className="text-[10px] text-blue-500 font-normal ml-1 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-100">
+                                                                        अतिरिक्त आदेश
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                            {row.address && !row.isDuplicateRow && (
+                                                                <div className="text-xs font-normal text-slate-400 mt-1 max-w-xs truncate" title={row.address}>
+                                                                    {row.address}
+                                                                </div>
+                                                            )}
+                                                        </td>
+
+                                                        {/* खदान लोकेशन (Situation) */}
+                                                        <td className="p-4 text-slate-600 max-w-sm">
+                                                            <div className="text-xs md:text-sm leading-relaxed" title={row.situation}>
+                                                                {row.situation || <span className="text-slate-300 italic">जानकारी उपलब्ध नहीं</span>}
+                                                            </div>
+                                                        </td>
+
+                                                        {/* आदेश विवरण (Orders) */}
+                                                        <td className="p-4 text-xs font-medium text-slate-700">
+                                                            {row.orders || <span className="text-slate-300">—</span>}
+                                                        </td>
+
+                                                        {/* अवधि (Periods) */}
+                                                        <td className="p-4">
+                                                            <span className="text-slate-700 font-medium bg-slate-50 px-2 py-1 rounded border border-slate-200 text-xs inline-block">
+                                                                {row.periods || "N/A"}
+                                                            </span>
+                                                        </td>
+
+                                                        {/* खनिज (Mineral) */}
+                                                        <td className="p-4">
+                                                            <span className="text-slate-700 font-medium bg-slate-50 px-2 py-1 rounded border border-slate-200 text-xs inline-block">
+                                                                {row.mineral || "N/A"}
+                                                            </span>
+                                                        </td>
+
+                                                        {/* स्थिति (Status) */}
+                                                        <td className="p-4 text-center">
+                                                            <span className={`inline-flex items-center justify-center px-3 py-1 rounded-full text-xs font-semibold border tracking-wide w-28
+                                     ${row.status.trim() === 'Working' ? 'bg-green-50 text-green-700 border-green-200 shadow-sm shadow-green-50' :
+                                                                    row.status.trim() === 'Lapse' ? 'bg-red-50 text-red-700 border-red-200 shadow-sm shadow-red-50' :
+                                                                        'bg-amber-50 text-amber-700 border-amber-200 shadow-sm shadow-amber-50'
+                                                                }`}>
+                                                                <span className={`h-1.5 w-1.5 rounded-full mr-1.5 ${row.status.trim() === 'Working' ? 'bg-green-500' :
+                                                                    row.status.trim() === 'Lapse' ? 'bg-red-500' : 'bg-amber-500'
+                                                                    }`}></span>
+                                                                {row.status}
+                                                            </span>
+                                                        </td>
+
+                                                    </tr>
+                                                );
+                                            })
+                                        ) : (
+                                            /* नो डेटा स्टेट (No Data Found UI) */
+                                            <tr>
+                                                <td colSpan="8" className="p-16 text-center">
+                                                    <div className="flex flex-col items-center justify-center space-y-2">
+                                                        <svg xmlns="http://w3.org" className="h-10 w-10 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                                                        </svg>
+                                                        <p className="text-base font-semibold text-slate-700">कोई रिकॉर्ड नहीं मिला</p>
+                                                        <p className="text-xs text-slate-400 max-w-xs">सर्च कीवर्ड बदलें या फ़िल्टर रीसेट करके दोबारा प्रयास करें।</p>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        )}
+                                    </tbody>
+
+                                </table>
+                            </div>
+
+                            {/* 3. टेबल फुटर (प्रोग्रेस / काउंटर बार) */}
+                            <div className="p-4 bg-slate-50 border-t border-slate-100 text-xs text-slate-500 flex flex-col sm:flex-row justify-between items-center gap-2">
+                                <div className="flex items-center gap-2">
+                                    <span className="h-2 w-2 rounded-full bg-blue-500 animate-pulse"></span>
+                                    <span>फ़िल्टर किए गए परिणाम: <b className="text-slate-800">{filteredData.length} रिकॉर्ड्स</b></span>
+                                </div>
+                                <div className="text-slate-400">
+                                    कुल यूनिक भंडारण: <span className="font-semibold text-slate-600">{stats.total}</span> | कुल रो (आदेशों सहित): <span className="font-semibold text-slate-600">{data.length}</span>
+                                </div>
+                            </div>
+                        </div>
+                        {/* डेटा टेबल कार्ड एंड */}
+
+                    </>
+
+                )}
+
 
             </div>
-
-            {/* कुल रिकॉर्ड काउंट (Total Rows Count) */}
-            {(totalRowCountA > 0 || totalRowCountB > 0) && (
-                <div className="grid grid-cols-2 gap-4 bg-white p-4 rounded border border-slate-200 shadow-sm text-center">
-                    <div className="bg-blue-50 border border-blue-200 p-3 rounded">
-                        <p className="text-xs text-slate-600 font-bold">{fileAName ? `${fileAName} कुल रिकॉर्ड्स` : 'कुल रिकॉर्ड्स'}</p>
-                        <p className="text-xl font-extrabold text-blue-900 mt-1">{totalRowCountA.toLocaleString('en-IN')}</p>
-                    </div>
-                    <div className="bg-purple-50 border border-purple-200 p-3 rounded">
-                        <p className="text-xs text-slate-600 font-bold">{fileBName ? `${fileBName} कुल रिकॉर्ड्स` : 'कुल रिकॉर्ड्स'}</p>
-                        <p className="text-xl font-extrabold text-purple-900 mt-1">{totalRowCountB.toLocaleString('en-IN')}</p>
-                    </div>
-                </div>
-            )}
-
-            {/* =========================================================================
-            मुख्य तुलनात्मक रिपोर्ट तालिका (100% कम्प्लीट और फिक्स कोड)
-           ========================================================================= */}
-            {comparisonReport.length > 0 && (
-                <div className="bg-white p-4 rounded border border-slate-200 shadow-sm space-y-3">
-
-                    <div className="overflow-x-auto border border-slate-200 rounded">
-                        <table className="min-w-full divide-y divide-slate-200 text-xs text-right font-semibold">
-                            <thead className="bg-slate-100 text-slate-700 font-bold text-center">
-                                <tr>
-                                    <th className="px-4 py-3 border-r border-slate-200 text-left text-slate-900 ">माह </th>
-                                    <th className="px-3 py-3 border-r border-slate-200 bg-blue-50 text-blue-900">फ़ाइल A </th>
-                                    <th className="px-3 py-3 border-r border-slate-200 bg-purple-50 text-purple-900">फ़ाइल B </th>
-                                    <th className="px-3 py-3 bg-green-50 border-r border-slate-200 text-slate-900">अंतर (Difference) </th>
-                                    <th className="px-3 py-3 bg-yellow-50 text-slate-900">प्रतिशत (%)</th>
-                                    <th className="px-3 py-3 border-r border-slate-200 bg-blue-50 text-blue-900">फ़ाइल A </th>
-                                    <th className="px-3 py-3 border-r border-slate-200 bg-purple-50 text-purple-900">फ़ाइल B </th>
-                                    <th className="px-3 py-3 bg-green-50 border-r border-slate-200 text-slate-900">अंतर (Difference) </th>
-                                    <th className="px-3 py-3 bg-yellow-50 text-slate-900">प्रतिशत (%)</th>
-
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-200 text-slate-700">
-                                {/* यहाँ filter फ़ंक्शन केवल चुने हुए महीने को ही पास होने देगा */}
-                                {comparisonReport.map((row, index) => (
-                                    <tr key={index} className="hover:bg-slate-50 transition-colors">
-                                        <td className="px-4 py-3 border-r border-slate-200 text-left font-bold text-[#0f4c6c]">{row.month}</td>
-                                        <td className="px-3 py-3 border-r border-slate-100 bg-blue-50 bg-opacity-10">{row.sumProdA.toLocaleString('en-IN')}</td>
-                                        <td className="px-3 py-3 border-r border-slate-200 bg-purple-50 bg-opacity-10">{row.sumProdB.toLocaleString('en-IN')}</td>
-                                        <td className={`px-3 py-3 border-r border-slate-200 font-extrabold bg-green-50 bg-opacity-20 ${row.sumProdDiff > 0 ? 'text-green-600' : row.sumProdDiff < 0 ? 'text-red-500' : 'text-slate-500'}`}>
-                                            {row.sumProdDiff > 0 ? `+${row.sumProdDiff.toLocaleString('en-IN')}` : row.sumProdDiff.toLocaleString('en-IN')}
-                                        </td>
-                                        <td className={`px-3 py-3 font-extrabold bg-yellow-50 bg-opacity-20 ${row.sumProdPercent > 0 ? 'text-green-600' : row.sumProdPercent < 0 ? 'text-red-500' : 'text-slate-500'}`}>
-                                            {row.sumProdPercent > 0 ? `+${row.sumProdPercent.toFixed(2)}%` : `${row.sumProdPercent.toFixed(2)}%`}
-                                        </td>
-                                        <td className="px-3 py-3 border-r border-slate-100 bg-blue-50 bg-opacity-10">{row.sumDispA.toLocaleString('en-IN')}</td>
-                                        <td className="px-3 py-3 border-r border-slate-200 bg-purple-50 bg-opacity-10">{row.sumDispB.toLocaleString('en-IN')}</td>
-                                        <td className={`px-3 py-3 border-r border-slate-200 font-extrabold bg-green-50 bg-opacity-20 ${row.sumDispDiff > 0 ? 'text-green-600' : row.sumDispDiff < 0 ? 'text-red-500' : 'text-slate-500'}`}>
-                                            {row.sumDispDiff > 0 ? `+${row.sumDispDiff.toLocaleString('en-IN')}` : row.sumDispDiff.toLocaleString('en-IN')}
-                                        </td>
-                                        <td className={`px-3 py-3 font-extrabold bg-yellow-50 bg-opacity-20 ${row.sumDispPercent > 0 ? 'text-green-600' : row.sumDispPercent < 0 ? 'text-red-500' : 'text-slate-500'}`}>
-                                            {row.sumDispPercent > 0 ? `+${row.sumDispPercent.toFixed(2)}%` : `${row.sumDispPercent.toFixed(2)}%`}
-                                        </td>
-                                    </tr>
-                                ))}
-
-                                {/* संचयी ग्रैंड टोटल रो (Grand Total Row) */}
-                                <tr className="bg-slate-800 text-white font-extrabold text-sm border-t-2 border-slate-900">
-                                    <td className="px-4 py-3 border-r border-slate-700 text-left uppercase tracking-wider">
-
-                                        योग
-                                    </td>
-                                    <td className="px-3 py-3 border-r border-slate-700">
-                                        {grandTotalProdA.toLocaleString('en-IN')}
-                                    </td>
-                                    <td className="px-3 py-3 border-r border-slate-700">
-                                        {grandTotalProdB.toLocaleString('en-IN')}
-                                    </td>
-                                    <td className={`px-3 py-3 border-r border-slate-700 ${grandTotalProdDiff > 0 ? 'text-green-400' : grandTotalProdDiff < 0 ? 'text-red-400' : 'text-slate-300'}`}>
-                                        {grandTotalProdDiff > 0 ? `+${grandTotalProdDiff.toLocaleString('en-IN')}` : grandTotalProdDiff.toLocaleString('en-IN')}
-                                    </td>
-                                    <td className={`px-3 py-3 ${grandTotalProdPercent > 0 ? 'text-green-400' : grandTotalProdPercent < 0 ? 'text-red-400' : 'text-slate-300'}`}>
-                                        {grandTotalProdPercent > 0 ? `+${grandTotalProdPercent.toFixed(2)}%` : `${grandTotalProdPercent.toFixed(2)}%`}
-                                    </td>
-                                    <td className="px-3 py-3 border-r border-slate-700">
-                                        {grandTotalDispA.toLocaleString('en-IN')}
-                                    </td>
-                                    <td className="px-3 py-3 border-r border-slate-700">
-                                        {grandTotalDispB.toLocaleString('en-IN')}
-                                    </td>
-                                    <td className={`px-3 py-3 border-r border-slate-700 ${grandTotalDispDiff > 0 ? 'text-green-400' : grandTotalDispDiff < 0 ? 'text-red-400' : 'text-slate-300'}`}>
-                                        {grandTotalDispDiff > 0 ? `+${grandTotalDispDiff.toLocaleString('en-IN')}` : grandTotalDispDiff.toLocaleString('en-IN')}
-                                    </td>
-                                    <td className={`px-3 py-3 ${grandTotalDispPercent > 0 ? 'text-green-400' : grandTotalDispPercent < 0 ? 'text-red-400' : 'text-slate-300'}`}>
-                                        {grandTotalDispPercent > 0 ? `+${grandTotalDispPercent.toFixed(2)}%` : `${grandTotalDispPercent.toFixed(2)}%`}
-                                    </td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            )}
-
-            {/* =========================================================================
-            File B: टारगेट माह बनाम पिछला माह — तुलना
-           ========================================================================= */}
-            {monthOverMonthB && (
-                <div className="bg-white p-4 rounded border border-slate-200 shadow-sm space-y-3">
-
-                    <h2 className="text-sm font-bold text-slate-800 text-center">
-                        {fileBName || 'फ़ाइल B'} — {monthOverMonthB.targetMonthName}
-                        {monthOverMonthB.prevMonthName ? ` बनाम ${monthOverMonthB.prevMonthName}` : ''}
-                    </h2>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-6 gap-4 text-center">
-
-                        <div className="bg-purple-50 border border-purple-200 p-3 rounded">
-                            <p className="text-xs text-slate-600 font-bold">{monthOverMonthB.targetMonthName} का योग</p>
-                            <p className="text-lg font-extrabold text-purple-900 mt-1">
-                                {monthOverMonthB.targetProdSumB.toLocaleString('en-IN')}
-                            </p>
-                        </div>
-
-                        <div className="bg-slate-100 border border-slate-200 p-3 rounded">
-                            <p className="text-xs text-slate-600 font-bold">
-                                {monthOverMonthB.prevMonthName ? `${monthOverMonthB.prevMonthName} का योग` : 'पिछला माह उपलब्ध नहीं'}
-                            </p>
-                            <p className="text-lg font-extrabold text-slate-700 mt-1">
-                                {monthOverMonthB.prevSumProdB !== null ? monthOverMonthB.prevSumProdB.toLocaleString('en-IN') : '—'}
-                            </p>
-                        </div>
-
-                        <div className="bg-green-50 border border-green-200 p-3 rounded">
-                            <p className="text-xs text-slate-600 font-bold">अंतर (Difference)</p>
-                            <p className={`text-lg font-extrabold mt-1 ${monthOverMonthB.Proddiff === null
-                                ? 'text-slate-400'
-                                : monthOverMonthB.Proddiff > 0
-                                    ? 'text-green-600'
-                                    : monthOverMonthB.Proddiff < 0
-                                        ? 'text-red-500'
-                                        : 'text-slate-500'
-                                }`}>
-                                {monthOverMonthB.Proddiff === null
-                                    ? '—'
-                                    : monthOverMonthB.Proddiff > 0
-                                        ? `+${monthOverMonthB.Proddiff.toLocaleString('en-IN')}`
-                                        : monthOverMonthB.Proddiff.toLocaleString('en-IN')}
-                            </p>
-                        </div>
-
-                        <div className="bg-purple-50 border border-purple-200 p-3 rounded">
-                            <p className="text-xs text-slate-600 font-bold">{monthOverMonthB.targetMonthName} का योग</p>
-                            <p className="text-lg font-extrabold text-purple-900 mt-1">
-                                {monthOverMonthB.targetDispSumB.toLocaleString('en-IN')}
-                            </p>
-                        </div>
-
-                        <div className="bg-slate-100 border border-slate-200 p-3 rounded">
-                            <p className="text-xs text-slate-600 font-bold">
-                                {monthOverMonthB.prevMonthName ? `${monthOverMonthB.prevMonthName} का योग` : 'पिछला माह उपलब्ध नहीं'}
-                            </p>
-                            <p className="text-lg font-extrabold text-slate-700 mt-1">
-                                {monthOverMonthB.prevSumDispB !== null ? monthOverMonthB.prevSumDispB.toLocaleString('en-IN') : '—'}
-                            </p>
-                        </div>
-
-                        <div className="bg-green-50 border border-green-200 p-3 rounded">
-                            <p className="text-xs text-slate-600 font-bold">अंतर (Difference)</p>
-                            <p className={`text-lg font-extrabold mt-1 ${monthOverMonthB.Dispdiff === null
-                                ? 'text-slate-400'
-                                : monthOverMonthB.Dispdiff > 0
-                                    ? 'text-green-600'
-                                    : monthOverMonthB.Dispdiff < 0
-                                        ? 'text-red-500'
-                                        : 'text-slate-500'
-                                }`}>
-                                {monthOverMonthB.Dispdiff === null
-                                    ? '—'
-                                    : monthOverMonthB.Dispdiff > 0
-                                        ? `+${monthOverMonthB.Dispdiff.toLocaleString('en-IN')}`
-                                        : monthOverMonthB.Dispdiff.toLocaleString('en-IN')}
-                            </p>
-                        </div>
-
-                    </div>
-
-                    {!monthOverMonthB.prevMonthName && (
-                        <p className="text-[11px] text-slate-400 text-center">
-                            यह वित्तीय वर्ष का पहला माह है, इसलिए पिछले माह से तुलना संभव नहीं है।
-                        </p>
-                    )}
-
-                </div>
-            )}
-
         </div>
-    );
+    )
 }
