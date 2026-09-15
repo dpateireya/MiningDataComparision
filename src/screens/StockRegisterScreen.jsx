@@ -1,8 +1,9 @@
+import { split } from 'postcss/lib/list';
 import React, { useState, useMemo } from 'react';
 // एक्सेल फाइल (.xlsx / .xls) रीड करने के लिए लाइब्रेरी इम्पोर्ट करें
 import * as XLSX from 'xlsx';
 
-export default function MiningApplicationScreen() {
+export default function StockRegisterScreen() {
     const [data, setData] = useState([]);
     const [searchTerm, setSearchTerm] = useState('');
     const [statusFilter, setStatusFilter] = useState('ALL');
@@ -33,7 +34,7 @@ export default function MiningApplicationScreen() {
             const parsedRows = [];
 
             // लूप को i = i + 2 से चलाएंगे ताकि एक बार में 2 पंक्तियाँ प्रोसेस हों
-            for (let i = 5; i < sheetData.length; i += 2) {
+            for (let i = 7; i < sheetData.length; i += 2) {
                 const firstRow = sheetData[i];       // पहली पंक्ति (नाम, लोकेशन आदि)
                 const secondRow = sheetData[i + 1];   // दूसरी पंक्ति (स्टेटस, आईडी कोड)
 
@@ -43,19 +44,31 @@ export default function MiningApplicationScreen() {
                 // सेल्स को साफ़ (Trim) करना
                 const cleanFirstCells = firstRow.map(c => c ? String(c).trim() : '');
                 const cleanSecondCells = secondRow.map(c => c ? String(c).trim() : '');
-                console.log(cleanFirstCells)
-                console.log(cleanSecondCells)
+                //console.log(cleanFirstCells)
+                //console.log(cleanSecondCells)
                 // 1. पहली पंक्ति से डेटा निकालना
-                const lesseeName = cleanFirstCells[6] || ''; // पट्टाधारी का नाम
+                const lesseeName = ` ${cleanFirstCells[2]} ${cleanFirstCells[6]} ${cleanFirstCells[8]}` || ''; // पट्टाधारी का नाम
                 const address = ''; // पता
-                const status = cleanFirstCells[5] || 'Unknown'; // उससे पहला स्टेटस है
-                const periods = ` ${cleanFirstCells[11]} ${cleanFirstCells[12]}  `;
-                const mineral = cleanFirstCells[8]
 
                 // सिचुएशन और खनिज खोजना
-                const idCode = cleanSecondCells[0] || ''; // आखिरी सेल आईडी कोड है
-                const situation = cleanSecondCells[11]
+                const situation = cleanFirstCells[17]
+                const mineral = cleanFirstCells[13]
+
+                const periods = cleanSecondCells[6] || '';
+                const idCode = cleanSecondCells[17] || ''; // आखिरी सेल आईडी कोड है
+
+                // यदि data.periods उपलब्ध होगा तभी स्प्लिट होगा, नहीं तो खाली एरे मिलेगा
+                const periodArray = cleanSecondCells[6].split('-')[1] || [];
+                const parts = String(periodArray || '').trim().split('/');
+                const target = parts.length === 3 ? new Date(parts[2], parts[1] - 1, parts[0]) : null;
+                const diffDays = target ? Math.ceil((target.setHours(0, 0, 0, 0) - new Date().setHours(0, 0, 0, 0)) / 86400000) : null;
+                console.log(`perioarray : ${periodArray} parts : ${parts}`)
+                //   console.log(`Stock Date : ${periodArray} \n target Date : ${target} Date  Dif :${diffDays}`)
+                // स्टेटस मैसेज (अवधि खत्म या बची होने की जानकारी)
+                const status = diffDays === null ? "Invalid Date" : diffDays > 0 ? "Working" : "Lapse";
+                const statuscolor = diffDays > 0 ? "text-green-600" : diffDays === 0 ? "text-yellow-600" : "text-red-500";
                 // console.log(`lessee : ${lesseeName} address: ${address} situation: ${situation} minerals ${mineral} status ${status} idcode ${idCode}`)
+
                 // हेडर रो को बाहर निकालने के लिए वैलिडेशन
                 if (lesseeName && idCode) {
 
@@ -67,13 +80,14 @@ export default function MiningApplicationScreen() {
                         periods, // 👈 दूसरी रो का डेटा यहाँ आ गया
                         mineral,
                         status,  // 👈 दूसरी रो का डेटा यहाँ आ गया
-                        idCode   // 👈 दूसरी रो का डेटा यहाँ आ गया
+                        idCode,   // 👈 दूसरी रो का डेटा यहाँ आ गया
+                        statuscolor
                     });
                 }
             }
 
             setData(parsedRows);
-            console.log(`data : ${JSON.stringify(parsedRows)}`)
+            //   console.log(`data : ${JSON.stringify(parsedRows)}`)
         };
 
         // फाइल को बाइनरी स्ट्रिंग के रूप में पढ़ना शुरू करें
@@ -95,12 +109,15 @@ export default function MiningApplicationScreen() {
         });
     }, [data, searchTerm, statusFilter]);
     // डैशबोर्ड स्टेटिस्टिक्स काउंटर
+
+
+
     const stats = useMemo(() => {
         return {
             total: data.length,
-            working: data.filter(d => d.status.trim() === 'Working').length,
-            lapse: data.filter(d => d.status.trim() === 'Lapse').length,
-            nonWorking: data.filter(d => d.status.trim() === 'Non-Working').length,
+            invaliddate: data.filter(d => d.status.trim() === "Invalid Date").length,
+            working: data.filter(d => d.status.trim() === "Working").length,
+            lapse: data.filter(d => d.status.trim() === "Lapse").length,
         };
     }, [data]);
 
@@ -111,12 +128,12 @@ export default function MiningApplicationScreen() {
                 {/* Top Header Card */}
                 <header className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
                     <div>
-                        <h1 className="text-2xl font-bold tracking-tight text-slate-900">Mining Lease Register Reader (.xlsx)</h1>
+                        <h1 className="text-2xl font-bold tracking-tight text-slate-900">Stock License Register Reader (.xlsx)</h1>
                         <p className="text-sm text-slate-500 mt-1">अपनी एक्सेल फ़ाइल (.xlsx / .xls) अपलोड करें।</p>
                     </div>
 
                     <div className="flex items-center gap-3">
-                        <label className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 ho    ver:bg-blue-700 text-white font-medium text-sm rounded-xl cursor-pointer transition-colors shadow-sm">
+                        <label className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-medium text-sm rounded-xl cursor-pointer transition-colors shadow-sm">
                             <svg xmlns="http://w3.org" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
                             एक्सेल फ़ाइल चुनें
                             <input type="file" accept=".xlsx,.xls" onChange={handleFileUpload} className="hidden" />
@@ -129,23 +146,23 @@ export default function MiningApplicationScreen() {
 
                     <>
                         {/* Summary KPI Cards */}
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mx-auto">
                             <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-                                <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">कुल खदानें</span>
+                                <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">कुल भण्‍डारण</span>
                                 <p className="text-3xl font-bold text-slate-900 mt-1">{stats.total}</p>
                             </div>
                             <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-                                <span className="text-xs font-semibold text-green-500 uppercase tracking-wider">चालू (Working)</span>
+                                <span className="text-xs font-semibold text-green-500 uppercase tracking-wider">कार्यशील (Working)</span>
                                 <p className="text-3xl font-bold text-green-600 mt-1">{stats.working}</p>
                             </div>
                             <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-                                <span className="text-xs font-semibold text-red-400 uppercase tracking-wider">निरस्त (Lapse)</span>
+                                <span className="text-xs font-semibold text-red-400 uppercase tracking-wider">अवधि समाप्‍त (Lapse)</span>
                                 <p className="text-3xl font-bold text-red-500 mt-1">{stats.lapse}</p>
                             </div>
-                            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+                            {/*     <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
                                 <span className="text-xs font-semibold text-amber-500 uppercase tracking-wider">बंद (Non-Working)</span>
-                                <p className="text-3xl font-bold text-amber-600 mt-1">{stats.nonWorking}</p>
-                            </div>
+                                <p className="text-3xl font-bold text-amber-600 mt-1">{stats.invaliddate}</p>
+                            </div> */}
                         </div>
 
                         {/* Filters & Search Control Bar */}
@@ -248,11 +265,10 @@ export default function MiningApplicationScreen() {
 
                                                     {/* खदान का वर्तमान स्टेटस */}
                                                     <td className="p-4 text-center">
-                                                        <span className={`inline-flex items-center justify-center px-3 py-1 rounded-full text-xs font-semibold border tracking-wide w-28 ${row.status.trim() === 'Working'
-                                                            ? 'bg-green-50 text-green-700 border-green-200 shadow-sm shadow-green-50' :
-                                                            row.status.trim() === 'Lapse'
-                                                                ? 'bg-red-50 text-red-700 border-red-200 shadow-sm shadow-red-50' :
-                                                                'bg-amber-50 text-amber-700 border-amber-200 shadow-sm shadow-amber-50'
+                                                        <span className={`inline-flex items-center justify-center px-3 py-1 rounded-full text-xs font-semibold border tracking-wide w-28
+                                                         ${row.status.trim() === 'Working' ? 'bg-green-50 text-green-700 border-green-200 shadow-sm shadow-green-50' :
+                                                                row.status.trim() === 'Lapse' ? 'bg-red-50 text-red-700 border-red-200 shadow-sm shadow-red-50' :
+                                                                    'bg-amber-50 text-amber-700 border-amber-200 shadow-sm shadow-amber-50'
                                                             }`}>
                                                             <span className={`h-1.5 w-1.5 rounded-full mr-1.5 ${row.status.trim() === 'Working' ? 'bg-green-500' :
                                                                 row.status.trim() === 'Lapse' ? 'bg-red-500' : 'bg-amber-500'

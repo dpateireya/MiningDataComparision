@@ -1,8 +1,8 @@
-import useState from 'react';
+import { useState } from 'react';
 import * as XLSX from 'xlsx';
 
 
-export default function test1() {
+export default function Test1() {
     const [fileAData, setFileAData] = useState([]);
     const [fileBData, setFileBData] = useState([]);
     const [fileAName, setFileAName] = useState('');
@@ -53,6 +53,8 @@ export default function test1() {
         };
         reader.readAsBinaryString(file);
     };
+
+
     // चुनी गई अवधि के आधार पर तुलना करने का मुख्य फ़ंक्शन
     const handleCompare = () => {
         if (fileAData.length === 0 || fileBData.length === 0) {

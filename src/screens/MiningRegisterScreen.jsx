@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 // एक्सेल फाइल (.xlsx / .xls) रीड करने के लिए लाइब्रेरी इम्पोर्ट करें
 import * as XLSX from 'xlsx';
 
-export default function QuarryApplicationScreen() {
+export default function MiningRegisterScreen() {
     const [data, setData] = useState([]);
     const [searchTerm, setSearchTerm] = useState('');
     const [statusFilter, setStatusFilter] = useState('ALL');
@@ -33,7 +33,7 @@ export default function QuarryApplicationScreen() {
             const parsedRows = [];
 
             // लूप को i = i + 2 से चलाएंगे ताकि एक बार में 2 पंक्तियाँ प्रोसेस हों
-            for (let i = 8; i < sheetData.length; i += 2) {
+            for (let i = 5; i < sheetData.length; i += 2) {
                 const firstRow = sheetData[i];       // पहली पंक्ति (नाम, लोकेशन आदि)
                 const secondRow = sheetData[i + 1];   // दूसरी पंक्ति (स्टेटस, आईडी कोड)
 
@@ -43,19 +43,18 @@ export default function QuarryApplicationScreen() {
                 // सेल्स को साफ़ (Trim) करना
                 const cleanFirstCells = firstRow.map(c => c ? String(c).trim() : '');
                 const cleanSecondCells = secondRow.map(c => c ? String(c).trim() : '');
-                // console.log(cleanFirstCells)
-                // console.log(cleanSecondCells)
+                console.log(cleanFirstCells)
+                console.log(cleanSecondCells)
                 // 1. पहली पंक्ति से डेटा निकालना
-                const lesseeName = cleanFirstCells[2] || ''; // पट्टाधारी का नाम
-                const address = cleanFirstCells[4] || ''; // पता
+                const lesseeName = cleanFirstCells[6] || ''; // पट्टाधारी का नाम
+                const address = ''; // पता
+                const status = cleanFirstCells[5] || 'Unknown'; // उससे पहला स्टेटस है
+                const periods = ` ${cleanFirstCells[11]} ${cleanFirstCells[12]}  `;
+                const mineral = cleanFirstCells[8]
 
                 // सिचुएशन और खनिज खोजना
-                const situation = cleanFirstCells[12]
-                const mineral = cleanFirstCells[15]
-
-                const periods = cleanSecondCells[2] || '';
-                const idCode = cleanSecondCells[16] || ''; // आखिरी सेल आईडी कोड है
-                const status = cleanSecondCells[15] || 'Unknown'; // उससे पहला स्टेटस है
+                const idCode = cleanSecondCells[0] || ''; // आखिरी सेल आईडी कोड है
+                const situation = cleanSecondCells[11]
                 // console.log(`lessee : ${lesseeName} address: ${address} situation: ${situation} minerals ${mineral} status ${status} idcode ${idCode}`)
                 // हेडर रो को बाहर निकालने के लिए वैलिडेशन
                 if (lesseeName && idCode) {
@@ -112,12 +111,12 @@ export default function QuarryApplicationScreen() {
                 {/* Top Header Card */}
                 <header className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
                     <div>
-                        <h1 className="text-2xl font-bold tracking-tight text-slate-900">Quarry Lease Register Reader (.xlsx)</h1>
+                        <h1 className="text-2xl font-bold tracking-tight text-slate-900">Mining Lease Register Reader (.xlsx)</h1>
                         <p className="text-sm text-slate-500 mt-1">अपनी एक्सेल फ़ाइल (.xlsx / .xls) अपलोड करें।</p>
                     </div>
 
                     <div className="flex items-center gap-3">
-                        <label className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-medium text-sm rounded-xl cursor-pointer transition-colors shadow-sm">
+                        <label className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 ho    ver:bg-blue-700 text-white font-medium text-sm rounded-xl cursor-pointer transition-colors shadow-sm">
                             <svg xmlns="http://w3.org" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
                             एक्सेल फ़ाइल चुनें
                             <input type="file" accept=".xlsx,.xls" onChange={handleFileUpload} className="hidden" />
@@ -136,17 +135,18 @@ export default function QuarryApplicationScreen() {
                                 <p className="text-3xl font-bold text-slate-900 mt-1">{stats.total}</p>
                             </div>
                             <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-                                <span className="text-xs font-semibold text-green-500 uppercase tracking-wider">चालू (Working)</span>
+                                <span className="text-xs font-semibold text-green-500 uppercase tracking-wider">कार्यशील (Working)</span>
                                 <p className="text-3xl font-bold text-green-600 mt-1">{stats.working}</p>
-                            </div>
-                            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-                                <span className="text-xs font-semibold text-red-400 uppercase tracking-wider">निरस्त (Lapse)</span>
-                                <p className="text-3xl font-bold text-red-500 mt-1">{stats.lapse}</p>
                             </div>
                             <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
                                 <span className="text-xs font-semibold text-amber-500 uppercase tracking-wider">बंद (Non-Working)</span>
                                 <p className="text-3xl font-bold text-amber-600 mt-1">{stats.nonWorking}</p>
                             </div>
+                            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+                                <span className="text-xs font-semibold text-red-400 uppercase tracking-wider">निरस्त (Lapse)</span>
+                                <p className="text-3xl font-bold text-red-500 mt-1">{stats.lapse}</p>
+                            </div>
+
                         </div>
 
                         {/* Filters & Search Control Bar */}

@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
-import QuarryApplicationScreen from './QuarryApplicationScreen';
-import MiningApplicationScreen from './MiningApplicationScreen';
-import MainComparisionScreen from './MainComparisionScreen'
+import MiningRegisterScreen from './MiningRegisterScreen';
 import ComparisionProductionScreen from './ComparisionProductionScreen';
+import StockRegisterScreen from './StockRegisterScreen';
+import ComparisionRoyaltyScreen from './ComparisionRoyaltyScreen';
+import ComparisionEtpScreen from './ComparisionEtpScreen';
+import QuarryRegisterScreen from './QuarryRegisterScreen';
 
 // ----------------------------------------------------------------------
 // 3. तीसरा मॉड्यूल: डैशबोर्ड ओवरव्यू / होम (Dashboard Overview)
@@ -25,17 +27,18 @@ function HomeOverviewView() {
 // 4. मुख्य लेआउट इंजन (Main App Component)
 // ----------------------------------------------------------------------
 export default function Dashboard() {
-    const [activeTab, setActiveTab] = useState('home');
+    const [activeTab, setActiveTab] = useState('mining-reader');
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
     // मेनू लिंक्स कॉन्फ़िगरेशन
     const menuItems = [
-        { id: 'home', label: '🏠 मुख्य डैशबोर्ड' },
-        { id: 'quarry-reader', label: '📊 गौण खनिज रीडर' },
+        // { id: 'home', label: '🏠 मुख्य डैशबोर्ड' },
         { id: 'mining-reader', label: '📊 मुख्‍य खनिज रीडर' },
+        { id: 'quarry-reader', label: '📊 गौण खनिज रीडर' },
+        { id: 'stock-reader', label: '📊 भण्‍डारण अनुज्ञप्ति रीडर' },
         { id: 'production-reader', label: '🌐 उत्‍पादन व प्रेषण जानकारी' },
-        { id: 'comparision-reader', label: '🌐 तुलनात्‍मक जानकारी' },
-
+        { id: 'royalty-reader', label: '🌐 राजस्‍व जानकारी' },
+        { id: 'etp-reader', label: '🌐 ई-टीपी जानकारी' },
     ];
 
     return (
@@ -72,12 +75,12 @@ export default function Dashboard() {
             )}
 
             {/* डेस्कटॉप साइडबार (Sidebar Navigation) */}
-            <aside className="hidden md:flex flex-col w-64 bg-slate-900 text-white border-r border-slate-800 p-5 shrink-0 fixed h-full z-20">
+            <aside className="hidden md:flex flex-col w-58 bg-slate-900 text-white border-r border-slate-800 p-5 shrink-0 fixed h-full z-20">
                 <div className="pb-6 border-b border-slate-800 mb-6 flex items-center gap-2">
                     <span className="text-xl">⛏️</span>
                     <div>
                         <h1 className="font-bold text-sm tracking-wide leading-none text-slate-100">Mining Suite</h1>
-                        <span className="text-[10px] text-slate-500 font-medium mt-1 inline-block">Katni Administration</span>
+                        <span className="text-[10px] text-slate-500 font-medium mt-1 inline-block">Get Consolidated and Comparision Data</span>
                     </div>
                 </div>
 
@@ -104,14 +107,16 @@ export default function Dashboard() {
             </aside>
 
             {/* मुख्य कंटेंट एरिया (Main Dynamic Content Pane) */}
-            <main className="flex-1 p-1 md:ml-64 min-w-0 transition-all duration-300">
+            <main className="flex-1 p-1 md:ml-58 min-w-0 transition-all duration-300">
                 <div className="max-w-6xl mx-auto">
                     {/* कंडीशन के आधार पर वेबपेज का बदलना */}
-                    {activeTab === 'home' && <HomeOverviewView />}
-                    {activeTab === 'quarry-reader' && <QuarryApplicationScreen />}
-                    {activeTab === 'mining-reader' && <MiningApplicationScreen />}
+                    {/*activeTab === 'home' && <HomeOverviewView /> */}
+                    {activeTab === 'mining-reader' && <MiningRegisterScreen />}
+                    {activeTab === 'quarry-reader' && <QuarryRegisterScreen />}
+                    {activeTab === 'stock-reader' && <StockRegisterScreen />}
                     {activeTab === 'production-reader' && <ComparisionProductionScreen />}
-                    {activeTab === 'comparision-reader' && <MainComparisionScreen />}
+                    {activeTab === 'royalty-reader' && <ComparisionRoyaltyScreen />}
+                    {activeTab === 'etp-reader' && <ComparisionEtpScreen />}
                 </div>
             </main>
 

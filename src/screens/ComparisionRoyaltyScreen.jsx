@@ -1,21 +1,14 @@
-import {
-  forwardRef,
-  useImperativeHandle,
-  useState
-} from 'react';
+import { useState } from 'react';
 import * as XLSX from 'xlsx';
 
-
-const ComparisionRoyaltyScreen = forwardRef(function ComparisionRoyaltyScreen(
-  { selectedMonth },
-  ref
-) {
+export default function ComparisionRoyaltyScreen() {
 
 
   const [fileAData, setFileAData] = useState([]);
   const [fileBData, setFileBData] = useState([]);
   const [fileAName, setFileAName] = useState('');
   const [fileBName, setFileBName] = useState('');
+  const [selectedMonth, setSelectedMonth] = useState('4');
 
   // फिल्टर्स और परिणाम स्टेट्स
   // const [selectedMonth, setSelectedMonth] = useState('All');
@@ -203,9 +196,7 @@ const ComparisionRoyaltyScreen = forwardRef(function ComparisionRoyaltyScreen(
       diff: prevRow ? targetRow.sumB - prevRow.sumB : null
     });
   };
-  useImperativeHandle(ref, () => ({
-    compare: handleCompare
-  }));
+
   // संचयी ग्रैंड टोटल (Cumulative Grand Total)
   const grandTotalA = comparisonReport.reduce((acc, row) => acc + row.sumA, 0);
   const grandTotalB = comparisonReport.reduce((acc, row) => acc + row.sumB, 0);
@@ -215,7 +206,8 @@ const ComparisionRoyaltyScreen = forwardRef(function ComparisionRoyaltyScreen(
     : (grandTotalB !== 0 ? 100 : 0);
 
   return (
-    <div className="w-full md:w-1/2 mx-auto space-y-6">
+    <div className="min-h-screen bg-slate-50 p-6 text-slate-800 font-sans">
+
       {/* मुख्य हेडर */}
       <div className="bg-white p-4 text-center rounded border border-slate-200 shadow-sm">
         <h1 className="text-xl font-bold text-slate-900 tracking-wide">प्राप्‍त राजस्‍व की तुलनात्‍मक जानकारी</h1>
@@ -225,7 +217,7 @@ const ComparisionRoyaltyScreen = forwardRef(function ComparisionRoyaltyScreen(
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="bg-[#d2ecf9] p-4 rounded border border-[#b2ddf3] flex flex-col items-center justify-center border-dashed border-2">
           <label className="cursor-pointer bg-white border border-[#b2ddf3] px-4 py-2 rounded text-center shadow-sm hover:bg-slate-50 block w-full max-w-xs">
-            <span className="font-bold text-xs text-[#0f4c6c]">📁 File A अपलोड करें</span>
+            <span className="font-bold text-xs text-[#0f4c6c]">📁 फ़ाइल A अपलोड करें</span>
             <input type="file" accept=".xlsx, .xls" className="hidden" onChange={(e) => processExcel(e, setFileAData, setFileAName, setTotalRowCountA)} />
           </label>
           {fileAName && <p className="mt-2 text-xs font-semibold text-slate-600 truncate max-w-xs">{fileAName}</p>}
@@ -233,7 +225,7 @@ const ComparisionRoyaltyScreen = forwardRef(function ComparisionRoyaltyScreen(
 
         <div className="bg-[#ebd6f1] p-4 rounded border border-[#dcbbe6] flex flex-col items-center justify-center border-dashed border-2">
           <label className="cursor-pointer bg-white border border-[#dcbbe6] px-4 py-2 rounded text-center shadow-sm hover:bg-slate-50 block w-full max-w-xs">
-            <span className="font-bold text-xs text-purple-800">📁 File B अपलोड करें</span>
+            <span className="font-bold text-xs text-purple-800">📁 फ़ाइल B अपलोड करें</span>
             <input type="file" accept=".xlsx, .xls" className="hidden" onChange={(e) => processExcel(e, setFileBData, setFileBName, setTotalRowCountB)} />
           </label>
           {fileBName && <p className="mt-2 text-xs font-semibold text-slate-600 truncate max-w-xs">{fileBName}</p>}
@@ -253,6 +245,53 @@ const ComparisionRoyaltyScreen = forwardRef(function ComparisionRoyaltyScreen(
           </div>
         </div>
       )}
+
+      {/* =====================================================
+                Common Filter + Single Compare Button
+            ====================================================== */}
+
+      <div className="max-w-6xl mx-auto mt-5">
+
+        <div className="bg-white p-4 rounded border border-slate-200 shadow-sm">
+
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+
+            {/* Month Selection */}
+            <div className="w-full sm:w-auto">
+
+              <label className="block text-xs font-bold text-slate-600 mb-1">
+                किस माह तक की रिपोर्ट देखनी है?
+              </label>
+              <select
+                value={selectedMonth}
+                onChange={(e) => setSelectedMonth(e.target.value)}
+                className="bg-slate-100 border border-slate-300 rounded p-2 text-xs font-bold focus:outline-none w-full sm:w-64 text-slate-700"
+              >
+                {financialMonths.map((month, index) => (
+                  <option
+                    key={index}
+                    value={month.num}
+                  >
+                    📅 {month.name} तक
+                  </option>
+                ))}
+              </select>
+            </div>
+
+
+            {/* Single Compare Button */}
+            <button
+              onClick={handleCompare}
+              className=" bg-green-600 hover:bg-green-700 text-white font-bold text-xs px-8 py-2.5 rounded shadow w-full sm:w-auto transition-all"
+            >
+              📊 तुलना करें ➔
+            </button>
+
+          </div>
+
+        </div>
+
+      </div>
 
       {/* =========================================================================
             मुख्य तुलनात्मक रिपोर्ट तालिका (100% कम्प्लीट और फिक्स कोड)
@@ -371,6 +410,5 @@ const ComparisionRoyaltyScreen = forwardRef(function ComparisionRoyaltyScreen(
     </div>
 
   );
-})
+}
 
-export default ComparisionRoyaltyScreen;
