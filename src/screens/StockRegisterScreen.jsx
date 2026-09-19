@@ -126,6 +126,53 @@ export default function StockRegisterScreen() {
         };
     }, [data]);
 
+    // फ़िल्टर किए गए स्टॉक परिणामों को एक्सेल में एक्सपोर्ट करने का लॉजिक
+    const handleExportExcel = () => {
+        if (filteredData.length === 0) {
+            alert("एक्सपोर्ट करने के लिए तालिका में कोई डेटा उपलब्ध नहीं है!");
+            return;
+        }
+
+        // एक्सेल की रो (Rows) के लिए डेटा का साफ़ फॉर्मेट तैयार करें
+        const excelRows = filteredData.map((row, index) => ({
+            "क्र.": index + 1,
+            "ID Code": row.idCode,
+            "भण्‍डारणकर्ता का नाम व पता": row.lesseeName,
+            "खदान लोकेशन (Situation)": row.situation || 'जानकारी उपलब्ध नहीं',
+            "आदेश विवरण (Orders)": row.orders || '—',
+            "अवधि (Periods)": row.periods || 'N/A',
+            "खनिज (Mineral)": row.mineral || 'N/A',
+            "स्थिति (Status)": row.status
+        }));
+
+        // 1. एक नई वर्कबुक (Workbook) बनाएं
+        const workbook = XLSX.utils.book_new();
+
+        // 2. डेटा को शीट में कन्वर्ट करें
+        const worksheet = XLSX.utils.json_to_sheet(excelRows);
+
+        // 3. कॉलम की चौड़ाई (Widths) सेट करें ताकि डेटा साफ़ दिखे
+        const max_widths = [
+            { wch: 6 },   // क्र.
+            { wch: 15 },  // ID Code
+            { wch: 45 },  // पट्टाधारी का नाम व पता
+            { wch: 40 },  // खदान लोकेशन
+            { wch: 25 },  // आदेश विवरण
+            { wch: 25 },  // अवधि
+            { wch: 35 },  // खनिज
+            { wch: 15 }   // स्थिति
+        ];
+        worksheet['!cols'] = max_widths;
+
+        // 4. शीट को वर्कबुक में जोड़ें
+        XLSX.utils.book_append_sheet(workbook, worksheet, "Stock_Data");
+
+        // 5. फ़ाइल को कंप्यूटर पर डाउनलोड करें
+        const currentDate = new Date().toISOString().split('T')[0];
+        XLSX.writeFile(workbook, `Stock_License_Report_${currentDate}.xlsx`);
+    };
+
+
     // 🔢 सीरियल नंबर को डायनामिक रूप से केवल मुख्य पंक्तियों के लिए गिनने का लॉजिक
     let currentSNo = 0;
 
@@ -180,21 +227,36 @@ export default function StockRegisterScreen() {
                                 />
                             </div>
 
-                            <div className="flex gap-2 w-full md:w-auto overflow-x-auto pb-1 md:pb-0">
-                                {['ALL', 'Working', 'Lapse', 'Non-Working'].map((status) => (
-                                    <button
-                                        key={status}
-                                        onClick={() => setStatusFilter(status)}
-                                        className={`px-4 py-1.5 rounded-lg text-xs font-medium transition-all whitespace-nowrap ${statusFilter === status
-                                            ? 'bg-slate-900 text-white shadow-sm'
-                                            : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                                            }`}
-                                    >
-                                        {status === 'ALL' ? 'सभी माइन्स' : status}
-                                    </button>
-                                ))}
+                            <div className="flex flex-wrap md:flex-nowrap gap-3 items-center w-full md:w-auto justify-between md:justify-end">
+                                {/* स्थिति फ़िल्टर बटन्स */}
+                                <div className="flex gap-2 overflow-x-auto pb-1 md:pb-0">
+                                    {['ALL', 'Working', 'Lapse', 'Non-Working'].map((status) => (
+                                        <button
+                                            key={status}
+                                            onClick={() => setStatusFilter(status)}
+                                            className={`px-4 py-1.5 rounded-lg text-xs font-medium transition-all whitespace-nowrap ${statusFilter === status
+                                                ? 'bg-slate-900 text-white shadow-sm'
+                                                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                                                }`}
+                                        >
+                                            {status === 'ALL' ? 'सभी माइन्स' : status}
+                                        </button>
+                                    ))}
+                                </div>
+
+                                {/* 🔥 हरा एक्सेल एक्सपोर्ट बटन */}
+                                <button
+                                    onClick={handleExportExcel}
+                                    className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-medium text-xs rounded-xl transition-colors shadow-sm whitespace-nowrap"
+                                >
+                                    <svg xmlns="http://w3.org" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5l4 4v13a2 2 0 01-2 2z" />
+                                    </svg>
+                                    एक्सेल डाउनलोड करें
+                                </button>
                             </div>
                         </div>
+
                         {/* Data Table */}
                         {/* डेटा टेबल कार्ड स्टार्ट */}
                         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
@@ -206,7 +268,7 @@ export default function StockRegisterScreen() {
                                         <tr>
                                             <th className="p-4 text-xs font-semibold text-slate-500 uppercase tracking-wider w-16 text-center">क्र.</th>
                                             <th className="p-4 text-xs font-semibold text-slate-500 uppercase tracking-wider w-28">ID Code</th>
-                                            <th className="p-4 text-xs font-semibold text-slate-500 uppercase tracking-wider md:w-80">पट्टाधारी का नाम व पता (Lessee Details)</th>
+                                            <th className="p-4 text-xs font-semibold text-slate-500 uppercase tracking-wider md:w-80">भण्‍डारणकर्ता का नाम व पता (Lessee Details)</th>
                                             <th className="p-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">खदान लोकेशन (Situation)</th>
                                             <th className="p-4 text-xs font-semibold text-slate-500 uppercase tracking-wider w-48">आदेश विवरण (Orders)</th>
                                             <th className="p-4 text-xs font-semibold text-slate-500 uppercase tracking-wider w-40">अवधि (Periods)</th>
@@ -290,7 +352,7 @@ export default function StockRegisterScreen() {
                                                         {/* स्थिति (Status) */}
                                                         <td className="p-4 text-center">
                                                             <span className={`inline-flex items-center justify-center px-3 py-1 rounded-full text-xs font-semibold border tracking-wide w-28
-                                     ${row.status.trim() === 'Working' ? 'bg-green-50 text-green-700 border-green-200 shadow-sm shadow-green-50' :
+                                                                    ${row.status.trim() === 'Working' ? 'bg-green-50 text-green-700 border-green-200 shadow-sm shadow-green-50' :
                                                                     row.status.trim() === 'Lapse' ? 'bg-red-50 text-red-700 border-red-200 shadow-sm shadow-red-50' :
                                                                         'bg-amber-50 text-amber-700 border-amber-200 shadow-sm shadow-amber-50'
                                                                 }`}>

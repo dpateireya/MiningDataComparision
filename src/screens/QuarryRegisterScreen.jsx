@@ -105,6 +105,50 @@ export default function QuarryRegisterScreen() {
         };
     }, [data]);
 
+    // फ़िल्टर किए गए परिणामों को एक्सेल में एक्सपोर्ट करने का लॉजिक
+    const handleExportExcel = () => {
+        if (filteredData.length === 0) {
+            alert("एक्सपोर्ट करने के लिए तालिका में कोई डेटा उपलब्ध नहीं है!");
+            return;
+        }
+
+        // एक्सेल की पंक्तियों (Rows) के लिए साफ़ और हिंदी हेडर वाला डेटा तैयार करें
+        const excelRows = filteredData.map((row, index) => ({
+            "क्र.": index + 1,
+            "ID Code": row.idCode,
+            "पट्टाधारी का नाम व पता": row.lesseeName,
+            "खदान लोकेशन": row.situation || 'जानकारी उपलब्ध नहीं',
+            "अवधि (Periods)": row.periods || 'N/A',
+            "खनिज (Mineral)": row.mineral || 'N/A',
+            "स्थिति (Status)": row.status
+        }));
+
+        // 1. एक नई वर्कबुक (Workbook) बनाएं
+        const workbook = XLSX.utils.book_new();
+
+        // 2. डेटा को शीट (Json to Sheet) में कन्वर्ट करें
+        const worksheet = XLSX.utils.json_to_sheet(excelRows);
+
+        // 3. कॉलम की चौड़ाई (Column Widths) ऑटो-एडजस्ट करें ताकि डेटा साफ दिखे
+        const max_widths = [
+            { wch: 6 },   // क्र.
+            { wch: 15 },  // ID Code
+            { wch: 45 },  // पट्टाधारी का नाम
+            { wch: 40 },  // खदान लोकेशन
+            { wch: 25 },  // अवधि
+            { wch: 30 },  // खनिज
+            { wch: 15 }   // स्थिति
+        ];
+        worksheet['!cols'] = max_widths;
+
+        // 4. शीट को वर्कबुक में जोड़ें
+        XLSX.utils.book_append_sheet(workbook, worksheet, "Filtered_Mining_Data");
+
+        // 5. फ़ाइल को डाउनलोड करें (नाम: Mining_Report_तारीख.xlsx)
+        const currentDate = new Date().toISOString().split('T')[0];
+        XLSX.writeFile(workbook, `Mining_Report_${currentDate}.xlsx`);
+    };
+
     return (
         <div className="min-h-screen bg-slate-50 p-6 text-slate-800 font-sans">
             <div className="max-w-7xl mx-auto space-y-6">
@@ -162,19 +206,33 @@ export default function QuarryRegisterScreen() {
                                 />
                             </div>
 
-                            <div className="flex gap-2 w-full md:w-auto overflow-x-auto pb-1 md:pb-0">
-                                {['ALL', 'Working', 'Lapse', 'Non-Working'].map((status) => (
-                                    <button
-                                        key={status}
-                                        onClick={() => setStatusFilter(status)}
-                                        className={`px-4 py-1.5 rounded-lg text-xs font-medium transition-all whitespace-nowrap ${statusFilter === status
-                                            ? 'bg-slate-900 text-white shadow-sm'
-                                            : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                                            }`}
-                                    >
-                                        {status === 'ALL' ? 'सभी माइन्स' : status}
-                                    </button>
-                                ))}
+                            <div className="flex flex-wrap md:flex-nowrap gap-3 items-center w-full md:w-auto justify-between md:justify-end">
+                                {/* स्थिति फ़िल्टर बटन्स */}
+                                <div className="flex gap-2 overflow-x-auto pb-1 md:pb-0">
+                                    {['ALL', 'Working', 'Lapse', 'Non-Working'].map((status) => (
+                                        <button
+                                            key={status}
+                                            onClick={() => setStatusFilter(status)}
+                                            className={`px-4 py-1.5 rounded-lg text-xs font-medium transition-all whitespace-nowrap ${statusFilter === status
+                                                ? 'bg-slate-900 text-white shadow-sm'
+                                                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                                                }`}
+                                        >
+                                            {status === 'ALL' ? 'सभी माइन्स' : status}
+                                        </button>
+                                    ))}
+                                </div>
+
+                                {/* 🔥 हरा एक्सेल एक्सपोर्ट बटन */}
+                                <button
+                                    onClick={handleExportExcel}
+                                    className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-medium text-xs rounded-xl transition-colors shadow-sm whitespace-nowrap"
+                                >
+                                    <svg xmlns="http://w3.org" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5l4 4v13a2 2 0 01-2 2z" />
+                                    </svg>
+                                    एक्सेल डाउनलोड करें
+                                </button>
                             </div>
                         </div>
 
