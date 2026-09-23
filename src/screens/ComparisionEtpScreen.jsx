@@ -16,6 +16,10 @@ export default function ComparisionEtpScreen() {
     // File B के टारगेट माह और उससे एक माह पहले वाले माह की तुलना
     const [monthOverMonthB, setMonthOverMonthB] = useState(null);
 
+    // 🔥 नया स्टेट: क्लिक की गई रो (चयनित माह) की विस्तृत जानकारी के लिए
+    const [selectedRowDetails, setSelectedRowDetails] = useState(null);
+
+
     // वित्तीय वर्ष के क्रमानुसार महीनों की मास्टर लिस्ट (जैसा एक्सेल शीट में है)
     // "num" वही value है जो MainComparisionScreen (parent) से selectedMonth
     // prop में भेजी जाती है (जैसे April="4", March="3"), और "name" वही है
@@ -125,6 +129,7 @@ export default function ComparisionEtpScreen() {
         });
 
         setComparisonReport(report);
+        setSelectedRowDetails(null); // नई तुलना शुरू होने पर पुराना क्लिक विवरण रीसेट करें
 
         // ===================================================================
         // File B: टारगेट माह का योग, टारगेट से एक माह पहले का योग, और अंतर
@@ -143,6 +148,58 @@ export default function ComparisionEtpScreen() {
         });
     };
 
+    // 🔥 नया फ़ंक्शन: रो क्लिक करने पर पट्टाधारियों के नाम और उनकी विशिष्ट ईटीपी खोजने का लॉजिक
+    // 🔥 संशोधित फ़ंक्शन: दोनों फाइलों के पट्टाधारियों को एक ही कंबाइंड लिस्ट में मर्ज करने का लॉजिक
+    const handleRowClick = (monthName) => {
+        const dataA = fileAData.slice(0, -1);
+        const dataB = fileBData.slice(0, -1);
+
+        // फ़ाइल A से पट्टाधारी के नाम और चुने माह की ETP निकालें
+        const lesseesA = dataA.map(row => {
+            const lesseeName = row["Name of lessee"] || row["Name of Lessee"] || row["Lessee Name"] || "Unknown";
+            const val = row[monthName];
+            const cleanNum = val ? Number(String(val).replace(/,/g, '').replace(/Rs\.?/gi, '').trim()) : 0;
+            return { name: lesseeName.trim(), etp: isNaN(cleanNum) ? 0 : cleanNum };
+        }).filter(item => item.etp > 0);
+
+        // फ़ाइल B से पट्टाधारी के नाम और चुने माह की ETP निकालें
+        const lesseesB = dataB.map(row => {
+            const lesseeName = row["Name of lessee"] || row["Name of Lessee"] || row["Lessee Name"] || "Unknown";
+            const val = row[monthName];
+            const cleanNum = val ? Number(String(val).replace(/,/g, '').replace(/Rs\.?/gi, '').trim()) : 0;
+            return { name: lesseeName.trim(), etp: isNaN(cleanNum) ? 0 : cleanNum };
+        }).filter(item => item.etp > 0);
+
+        // दोनों फाइलों के पट्टाधारियों के यूनिक (Unique) नामों का सेट बनाएं
+        const allNames = new Set([
+            ...lesseesA.map(item => item.name),
+            ...lesseesB.map(item => item.name)
+        ]);
+
+        // एक कंबाइंड लिस्ट तैयार करें (Full Outer Join)
+        const combinedList = Array.from(allNames).map(name => {
+            const matchA = lesseesA.find(item => item.name === name);
+            const matchB = lesseesB.find(item => item.name === name);
+
+            const etpA = matchA ? matchA.etp : 0;
+            const etpB = matchB ? matchB.etp : 0;
+
+            return {
+                name: name,
+                etpA: etpA,
+                etpB: etpB,
+                diff: etpB - etpA
+            };
+        });
+
+        // सबसे ज्यादा अंतर या वैल्यू वाले पट्टाधारी को ऊपर दिखाने के लिए सॉर्ट करें
+        combinedList.sort((a, b) => Math.max(b.etpA, b.etpB) - Math.max(a.etpA, a.etpB));
+
+        setSelectedRowDetails({
+            month: monthName,
+            combinedList: combinedList
+        });
+    };
 
 
     // ग्रैंड टोटल निकालने का लॉजिक (यह चुने हुए महीने के अनुसार डायनामिक बदलेगा)
@@ -193,149 +250,289 @@ export default function ComparisionEtpScreen() {
             )}
 
             {/* =====================================================
-                Common Filter + Single Compare Button
-            ====================================================== */}
-
+                Common Filter + Single Compare Button + Export
+                ====================================================== */}
             <div className="max-w-6xl mx-auto mt-5">
+                <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                    <div className="flex flex-col md:flex-row items-center justify-between gap-4">
 
-                <div className="bg-white p-4 rounded border border-slate-200 shadow-sm">
-
-                    <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
-
-                        {/* Month Selection */}
-                        <div className="w-full sm:w-auto">
-
+                        {/* 1. माह का चयन (Month Selection) */}
+                        <div className="w-full md:w-auto flex-1">
                             <label className="block text-xs font-bold text-slate-600 mb-1">
                                 किस माह तक की रिपोर्ट देखनी है?
                             </label>
                             <select
                                 value={selectedMonth}
                                 onChange={(e) => setSelectedMonth(e.target.value)}
-                                className="bg-slate-100 border border-slate-300 rounded p-2 text-xs font-bold focus:outline-none w-full sm:w-64 text-slate-700"
+                                className="bg-slate-100 border border-slate-300 rounded p-2 text-xs font-bold focus:outline-none w-full md:w-64 text-slate-700 cursor-pointer"
                             >
                                 {financialMonths.map((month, index) => (
-                                    <option
-                                        key={index}
-                                        value={month.num}
-                                    >
+                                    <option key={index} value={month.num}>
                                         📅 {month.name} तक
                                     </option>
                                 ))}
                             </select>
                         </div>
 
+                        {/* 2. ऐक्शन्स बटन्स (Compare and Export Buttons) */}
+                        <div className="flex flex-col sm:flex-row items-center gap-3 w-full md:w-auto">
 
-                        {/* Single Compare Button */}
-                        <button
-                            onClick={handleCompare}
-                            className=" bg-green-600 hover:bg-green-700 text-white font-bold text-xs px-8 py-2.5 rounded shadow w-full sm:w-auto transition-all"
-                        >
-                            📊 तुलना करें ➔
-                        </button>
+                            {/* तुलना करें बटन */}
+                            <button
+                                onClick={handleCompare}
+                                className="bg-green-600 hover:bg-green-700 text-white font-bold text-xs px-8 py-2.5 rounded shadow w-full sm:w-auto transition-all flex items-center justify-center gap-2"
+                            >
+                                📊 तुलना करें ➔
+                            </button>
+
+                            {/* एक्सेल डाउनलोड करें बटन (यदि तुलना रिपोर्ट उपलब्ध है तभी दिखेगा) */}
+                            {comparisonReport.length > 0 && (
+                                <button
+                                    onClick={() => {
+                                        if (comparisonReport.length === 0) return;
+                                        const workbook = XLSX.utils.book_new();
+                                        const excelRows = comparisonReport.map((row) => ({
+                                            "माह (Month)": row.month,
+                                            [fileAName || 'फ़ाइल A']: row.sumA,
+                                            [fileBName || 'फ़ाइल B']: row.sumB,
+                                            "अंतर (Difference)": row.sumDiff,
+                                            "प्रतिशत (%)": `${row.sumPercent.toFixed(2)}%`
+                                        }));
+                                        const worksheet = XLSX.utils.json_to_sheet(excelRows);
+                                        worksheet['!cols'] = [{ wch: 15 }, { wch: 20 }, { wch: 20 }, { wch: 18 }, { wch: 15 }];
+                                        XLSX.utils.book_append_sheet(workbook, worksheet, "ETP_Comparision");
+                                        XLSX.writeFile(workbook, `ETP_Comparision_Report_${new Date().toISOString().split('T')[0]}.xlsx`);
+                                    }}
+                                    className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-6 py-2.5 rounded shadow w-full sm:w-auto transition-all flex items-center justify-center gap-2"
+                                >
+                                    <svg xmlns="http://w3.org" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5l4 4v13a2 2 0 01-2 2z" />
+                                    </svg>
+                                    एक्सेल डाउनलोड
+                                </button>
+                            )}
+
+                        </div>
 
                     </div>
-
                 </div>
-
             </div>
 
 
 
-            {/* =========================================================================
-            मुख्य तुलनात्मक रिपोर्ट तालिका (100% कम्प्लीट और फिक्स कोड)
-           ========================================================================= */}
-            {comparisonReport.length > 0 && (
-                <div className="bg-white p-4 rounded border border-slate-200 shadow-sm space-y-3">
 
-                    <div className="overflow-x-auto border border-slate-200 rounded">
+            {/* =========================================================================
+                मुख्य तुलनात्मक रिपोर्ट तालिका (100% कम्प्लीट और फिक्स कोड)
+                ========================================================================= */}
+            {comparisonReport.length > 0 && (
+                <div className="bg-white p-4 rounded border border-slate-200 shadow-sm space-y-3 mt-5">
+                    <p className="text-[11px] text-slate-400 font-semibold italic flex items-center gap-1">
+                        <span>💡 संकेत: पट्टाधारीवार और विस्तृत ईटीपी विवरण देखने के लिए नीचे किसी भी महीने की पंक्ति (Row) पर क्लिक करें।</span>
+                    </p>
+
+                    <div className="overflow-x-auto border border-slate-200 rounded-xl shadow-sm">
                         <table className="min-w-full divide-y divide-slate-200 text-xs text-right font-semibold">
-                            <thead className="bg-slate-100 text-slate-700 font-bold text-center">
+
+                            {/* टेबल हेडर */}
+                            <thead className="bg-slate-100 text-slate-700 font-bold text-center select-none">
                                 <tr>
-                                    <th className="px-4 py-3 border-r border-slate-200 text-left text-slate-900 w-1/5">माह </th>
-                                    <th className="px-3 py-3 border-r border-slate-200 bg-blue-50 text-blue-900">{fileAName || 'फ़ाइल A'} </th>
-                                    <th className="px-3 py-3 border-r border-slate-200 bg-purple-50 text-purple-900">{fileBName || 'फ़ाइल B'} </th>
-                                    <th className="px-3 py-3 bg-green-50 border-r border-slate-200 text-slate-900">अंतर (Difference) </th>
-                                    <th className="px-3 py-3 bg-yellow-50 text-slate-900">प्रतिशत (%)</th>
+                                    <th className="px-4 py-3 border-r border-slate-200 text-left text-slate-900 w-1/5">माह (Month)</th>
+                                    <th className="px-3 py-3 border-r border-slate-200 bg-blue-50/50 text-blue-900">{fileAName || 'फ़ाइल A'}</th>
+                                    <th className="px-3 py-3 border-r border-slate-200 bg-purple-50/50 text-purple-900">{fileBName || 'फ़ाइल B'}</th>
+                                    <th className="px-3 py-3 bg-green-50/50 border-r border-slate-200 text-green-900">अंतर (Difference)</th>
+                                    <th className="px-3 py-3 bg-yellow-50/50 text-yellow-900">प्रतिशत (%)</th>
                                 </tr>
                             </thead>
-                            <tbody className="divide-y divide-slate-200 text-slate-700">
-                                {/* यहाँ filter फ़ंक्शन केवल चुने हुए महीने को ही पास होने देगा */}
-                                {comparisonReport.map((row, index) => (
-                                    <tr key={index} className="hover:bg-slate-50 transition-colors">
-                                        <td className="px-4 py-3 border-r border-slate-200 text-left font-bold text-[#0f4c6c]">{row.month}</td>
-                                        <td className="px-3 py-3 border-r border-slate-100 bg-blue-50 bg-opacity-10">{row.sumA.toLocaleString('en-IN')}</td>
-                                        <td className="px-3 py-3 border-r border-slate-200 bg-purple-50 bg-opacity-10">{row.sumB.toLocaleString('en-IN')}</td>
-                                        <td className={`px-3 py-3 border-r border-slate-200 font-extrabold bg-green-50 bg-opacity-20 ${row.sumDiff > 0 ? 'text-green-600' : row.sumDiff < 0 ? 'text-red-500' : 'text-slate-500'}`}>
-                                            {row.sumDiff > 0 ? `+${row.sumDiff.toLocaleString('en-IN')}` : row.sumDiff.toLocaleString('en-IN')}
-                                        </td>
-                                        <td className={`px-3 py-3 font-extrabold bg-yellow-50 bg-opacity-20 ${row.sumPercent > 0 ? 'text-green-600' : row.sumPercent < 0 ? 'text-red-500' : 'text-slate-500'}`}>
-                                            {row.sumPercent > 0 ? `+${row.sumPercent.toFixed(2)}%` : `${row.sumPercent.toFixed(2)}%`}
-                                        </td>
-                                    </tr>
-                                ))}
+
+                            {/* टेबल बॉडी */}
+                            <tbody className="divide-y divide-slate-200 text-slate-700 bg-white">
+                                {comparisonReport.map((row, index) => {
+                                    const isSelected = selectedRowDetails?.month === row.month;
+
+                                    return (
+                                        <tr
+                                            key={index}
+                                            onClick={() => handleRowClick(row.month)}
+                                            className={`transition-all cursor-pointer select-none ${isSelected
+                                                ? 'bg-blue-50 hover:bg-blue-100/80 border-l-4 border-l-blue-600'
+                                                : 'hover:bg-slate-50/80'
+                                                }`}
+                                        >
+                                            {/* माह नाम कॉलम */}
+                                            <td className="px-4 py-3 border-r border-slate-200 text-left font-bold text-[#0f4c6c] flex items-center justify-between">
+                                                <span>{row.month}</span>
+                                                <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold transition-all ${isSelected
+                                                    ? 'bg-blue-600 text-white'
+                                                    : 'bg-slate-100 text-slate-500 border border-slate-200'
+                                                    }`}>
+                                                    {isSelected ? 'चयनित 👁️' : 'देखें 🔍'}
+                                                </span>
+                                            </td>
+
+                                            {/* फ़ाइल A का योग */}
+                                            <td className="px-3 py-3 border-r border-slate-100 font-mono">
+                                                {row.sumA.toLocaleString('en-IN')}
+                                            </td>
+
+                                            {/* फ़ाइल B का योग */}
+                                            <td className="px-3 py-3 border-r border-slate-200 font-mono">
+                                                {row.sumB.toLocaleString('en-IN')}
+                                            </td>
+
+                                            {/* अंतर कॉलम */}
+                                            <td className={`px-3 py-3 border-r border-slate-200 font-mono font-extrabold ${row.sumDiff > 0 ? 'text-green-600' : row.sumDiff < 0 ? 'text-red-500' : 'text-slate-500'
+                                                }`}>
+                                                {row.sumDiff > 0 ? `+${row.sumDiff.toLocaleString('en-IN')}` : row.sumDiff.toLocaleString('en-IN')}
+                                            </td>
+
+                                            {/* प्रतिशत कॉलम */}
+                                            <td className={`px-3 py-3 font-mono font-extrabold ${row.sumPercent > 0 ? 'text-green-600' : row.sumPercent < 0 ? 'text-red-500' : 'text-slate-500'
+                                                }`}>
+                                                {row.sumPercent > 0 ? `+${row.sumPercent.toFixed(2)}%` : `${row.sumPercent.toFixed(2)}%`}
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
 
                                 {/* संचयी ग्रैंड टोटल रो (Grand Total Row) */}
-                                <tr className="bg-slate-800 text-white font-extrabold text-sm border-t-2 border-slate-900">
+                                <tr className="bg-slate-800 text-white font-extrabold text-sm border-t-2 border-slate-900 select-none">
                                     <td className="px-4 py-3 border-r border-slate-700 text-left uppercase tracking-wider">
-
-                                        योग
+                                        योग (Grand Total)
                                     </td>
-                                    <td className="px-3 py-3 border-r border-slate-700">
+                                    <td className="px-3 py-3 border-r border-slate-700 font-mono">
                                         {grandTotalA.toLocaleString('en-IN')}
                                     </td>
-                                    <td className="px-3 py-3 border-r border-slate-700">
+                                    <td className="px-3 py-3 border-r border-slate-700 font-mono">
                                         {grandTotalB.toLocaleString('en-IN')}
                                     </td>
-                                    <td className={`px-3 py-3 border-r border-slate-700 ${grandTotalDiff > 0 ? 'text-green-400' : grandTotalDiff < 0 ? 'text-red-400' : 'text-slate-300'}`}>
+                                    <td className={`px-3 py-3 border-r border-slate-700 font-mono ${grandTotalDiff > 0 ? 'text-green-400' : grandTotalDiff < 0 ? 'text-red-400' : 'text-slate-300'
+                                        }`}>
                                         {grandTotalDiff > 0 ? `+${grandTotalDiff.toLocaleString('en-IN')}` : grandTotalDiff.toLocaleString('en-IN')}
                                     </td>
-                                    <td className={`px-3 py-3 ${grandTotalPercent > 0 ? 'text-green-400' : grandTotalPercent < 0 ? 'text-red-400' : 'text-slate-300'}`}>
+                                    <td className={`px-3 py-3 font-mono ${grandTotalPercent > 0 ? 'text-green-400' : grandTotalPercent < 0 ? 'text-red-400' : 'text-slate-300'
+                                        }`}>
                                         {grandTotalPercent > 0 ? `+${grandTotalPercent.toFixed(2)}%` : `${grandTotalPercent.toFixed(2)}%`}
                                     </td>
                                 </tr>
                             </tbody>
+
                         </table>
                     </div>
                 </div>
             )}
 
-            {/* =========================================================================
-            File B: टारगेट माह बनाम पिछला माह — तुलना
-           ========================================================================= */}
-            {monthOverMonthB && (
-                <div className="bg-white p-4 rounded border border-slate-200 shadow-sm space-y-3">
+            {/* 🔥 नया सेक्शन: सिंगल कंबाइंड टेबल में पट्टाधारीवार विस्तृत विवरण (Drill-Down UI) */}
+            {selectedRowDetails && (
+                <div className="bg-white p-5 rounded-2xl border border-slate-300 shadow-md mt-6 space-y-4 animate-fadeIn">
 
-                    <h2 className="text-sm font-bold text-slate-800 text-center">
-                        {fileBName || 'फ़ाइल B'} — {monthOverMonthB.targetMonthName}
-                        {monthOverMonthB.prevMonthName ? ` बनाम ${monthOverMonthB.prevMonthName}` : ''}
+                    {/* कार्ड हेडर सेक्शन */}
+                    <div className="flex items-center justify-between border-b pb-3 border-slate-200">
+                        <h2 className="text-sm font-extrabold text-slate-900 flex items-center gap-2 select-none">
+                            📊 माह <span className="bg-blue-600 text-white px-2 py-0.5 rounded text-xs font-mono">{selectedRowDetails.month}</span> का पट्टाधारीवार तुलनात्मक ई-टीपी विवरण
+                        </h2>
+                        <button
+                            onClick={() => setSelectedRowDetails(null)}
+                            className="text-xs bg-red-50 text-red-600 border border-red-200 px-3 py-1.5 rounded-xl font-bold hover:bg-red-100 transition-all shadow-sm active:scale-95"
+                        >
+                            ✕ विवरण बंद करें
+                        </button>
+                    </div>
+
+                    {/* कंबाइंड सिंगल टेबल लेआउट */}
+                    <div className="overflow-x-auto border border-slate-200 rounded-xl shadow-sm text-xs">
+                        {selectedRowDetails.combinedList.length > 0 ? (
+                            <table className="min-w-full divide-y divide-slate-200 text-right font-semibold">
+                                <thead className="bg-slate-100 text-slate-700 font-bold text-center select-none">
+                                    <tr>
+                                        <th className="px-4 py-3 border-r border-slate-200 text-left text-slate-900 w-2/5">पट्टाधारी का नाम (Lessee Name)</th>
+                                        <th className="px-3 py-3 border-r border-slate-200 bg-blue-50/50 text-blue-900 w-1/5">{fileAName || 'फ़ाइल A वैल्यू'}</th>
+                                        <th className="px-3 py-3 border-r border-slate-200 bg-purple-50/50 text-purple-900 w-1/5">{fileBName || 'फ़ाइल B वैल्यू'}</th>
+                                        <th className="px-3 py-3 bg-green-50/50 text-green-900 w-1/5">अंतर (Difference)</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-200 text-slate-700 bg-white">
+                                    {selectedRowDetails.combinedList.map((lessee, idx) => (
+                                        <tr key={idx} className="hover:bg-slate-50/80 transition-all">
+                                            {/* पट्टाधारी का नाम */}
+                                            <td className="px-4 py-3 border-r border-slate-200 text-left font-bold text-slate-800">
+                                                {idx + 1}. {lessee.name}
+                                            </td>
+
+                                            {/* फ़ाइल A वैल्यू (नहीं होने पर 0) */}
+                                            <td className={`px-3 py-3 border-r border-slate-100 font-mono ${lessee.etpA === 0 ? 'text-slate-300' : 'text-blue-700'}`}>
+                                                {lessee.etpA.toLocaleString('en-IN')}
+                                            </td>
+
+                                            {/* फ़ाइल B वैल्यू (नहीं होने पर 0) */}
+                                            <td className={`px-3 py-3 border-r border-slate-200 font-mono ${lessee.etpB === 0 ? 'text-slate-300' : 'text-purple-700'}`}>
+                                                {lessee.etpB.toLocaleString('en-IN')}
+                                            </td>
+
+                                            {/* दोनों का अंतर */}
+                                            <td className={`px-3 py-3 font-mono font-extrabold ${lessee.diff > 0 ? 'text-green-600' : lessee.diff < 0 ? 'text-red-500' : 'text-slate-500'}`}>
+                                                {lessee.diff > 0 ? `+${lessee.diff.toLocaleString('en-IN')}` : lessee.diff.toLocaleString('en-IN')}
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        ) : (
+                            <div className="p-8 text-slate-400 italic text-center bg-white">
+                                इस माह में किसी भी फ़ाइल में कोई रिकॉर्ड नहीं मिला।
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
+
+
+
+            {/* =========================================================================
+                File B: टारगेट माह बनाम पिछला माह — तुलना (100% कम्प्लीट और फिक्स कोड)
+                ========================================================================= */}
+            {monthOverMonthB && (
+                <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4 mt-5">
+
+                    {/* कार्ड हेडर */}
+                    <h2 className="text-xs font-bold text-slate-500 uppercase tracking-wider text-center border-b pb-2 border-slate-100">
+                        📊 {fileBName || 'फ़ाइल B'} — {monthOverMonthB.targetMonthName}
+                        {monthOverMonthB.prevMonthName ? ` बनाम ${monthOverMonthB.prevMonthName} (माह-दर-माह तुलना)` : ''}
                     </h2>
 
+                    {/* KPI ग्रिड लेआउट */}
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-center">
 
-                        <div className="bg-purple-50 border border-purple-200 p-3 rounded">
-                            <p className="text-xs text-slate-600 font-bold">{monthOverMonthB.targetMonthName} का योग</p>
-                            <p className="text-lg font-extrabold text-purple-900 mt-1">
+                        {/* 1. टारगेट माह का बॉक्स */}
+                        <div className="bg-purple-50/50 border border-purple-100 p-4 rounded-xl shadow-sm hover:bg-purple-50 transition-colors">
+                            <p className="text-xs text-slate-500 font-bold flex items-center justify-center gap-1">
+                                📅 {monthOverMonthB.targetMonthName} का कुल योग
+                            </p>
+                            <p className="text-2xl font-black text-purple-900 mt-1 font-mono">
                                 {monthOverMonthB.targetSumB.toLocaleString('en-IN')}
                             </p>
                         </div>
 
-                        <div className="bg-slate-100 border border-slate-200 p-3 rounded">
-                            <p className="text-xs text-slate-600 font-bold">
-                                {monthOverMonthB.prevMonthName ? `${monthOverMonthB.prevMonthName} का योग` : 'पिछला माह उपलब्ध नहीं'}
+                        {/* 2. पिछले माह का बॉक्स */}
+                        <div className="bg-slate-50/50 border border-slate-200 p-4 rounded-xl shadow-sm hover:bg-slate-100/50 transition-colors">
+                            <p className="text-xs text-slate-500 font-bold flex items-center justify-center gap-1">
+                                {monthOverMonthB.prevMonthName ? `⏮️ ${monthOverMonthB.prevMonthName} का कुल योग` : ' पिछला माह उपलब्ध नहीं'}
                             </p>
-                            <p className="text-lg font-extrabold text-slate-700 mt-1">
+                            <p className="text-2xl font-black text-slate-700 mt-1 font-mono">
                                 {monthOverMonthB.prevSumB !== null ? monthOverMonthB.prevSumB.toLocaleString('en-IN') : '—'}
                             </p>
                         </div>
 
-                        <div className="bg-green-50 border border-green-200 p-3 rounded">
-                            <p className="text-xs text-slate-600 font-bold">अंतर (Difference)</p>
-                            <p className={`text-lg font-extrabold mt-1 ${monthOverMonthB.diff === null
+                        {/* 3. अंतर (Difference) का बॉक्स */}
+                        <div className="bg-slate-50/50 border border-slate-200 p-4 rounded-xl shadow-sm hover:bg-slate-100/50 transition-colors">
+                            <p className="text-xs text-slate-500 font-bold">
+                                📉 अंतर (Month-over-Month MoM)
+                            </p>
+                            <p className={`text-2xl font-black mt-1 font-mono ${monthOverMonthB.diff === null
                                 ? 'text-slate-400'
                                 : monthOverMonthB.diff > 0
-                                    ? 'text-green-600'
+                                    ? 'text-green-600 bg-green-50/50 border border-green-100 rounded-lg py-0.5'
                                     : monthOverMonthB.diff < 0
-                                        ? 'text-red-500'
+                                        ? 'text-red-500 bg-red-50/50 border border-red-100 rounded-lg py-0.5'
                                         : 'text-slate-500'
                                 }`}>
                                 {monthOverMonthB.diff === null
@@ -348,14 +545,16 @@ export default function ComparisionEtpScreen() {
 
                     </div>
 
+                    {/* यदि अप्रैल चुना गया हो (पहला महीना) तो छोटी सूचना दिखाएं */}
                     {!monthOverMonthB.prevMonthName && (
-                        <p className="text-[11px] text-slate-400 text-center">
-                            यह वित्तीय वर्ष का पहला माह है, इसलिए पिछले माह से तुलना संभव नहीं है।
+                        <p className="text-[10px] text-slate-400 text-center font-medium italic mt-2">
+                            ℹ️ यह वित्तीय वर्ष का पहला माह (April) है, इसलिए इसके पिछले माह (March) का डेटा इस डेटाबेस फाइल में उपलब्ध नहीं है।
                         </p>
                     )}
 
                 </div>
             )}
+
 
         </div>
     );
